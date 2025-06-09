@@ -29,6 +29,13 @@ crm_service = None
 gmaps_client = None
 openai_client = None
 
+# Global variables for imported functions (initialized in main)
+render_enhanced_prospect_card = None
+render_search_history_tab = None
+render_analytics_dashboard = None
+render_batch_messaging = None
+render_prospects_table = None
+
 def init_session_state():
     """Initialize session state variables"""
     if 'search_results' not in st.session_state:
@@ -1224,16 +1231,23 @@ def main():
     # NOW import CRMService and components (after all other Streamlit commands)
     from services.crm_service import CRMService
     from components.crm_ui import (
-        render_enhanced_prospect_card, 
-        render_search_history_tab, 
-        render_analytics_dashboard,
-        render_batch_messaging,
-        render_prospects_table
+        render_enhanced_prospect_card as _render_enhanced_prospect_card, 
+        render_search_history_tab as _render_search_history_tab, 
+        render_analytics_dashboard as _render_analytics_dashboard,
+        render_batch_messaging as _render_batch_messaging,
+        render_prospects_table as _render_prospects_table
     )
     from components.maps import (
         display_interactive_map,
         display_map_statistics
     )
+    
+    # Make imported functions available globally
+    render_enhanced_prospect_card = _render_enhanced_prospect_card
+    render_search_history_tab = _render_search_history_tab
+    render_analytics_dashboard = _render_analytics_dashboard
+    render_batch_messaging = _render_batch_messaging
+    render_prospects_table = _render_prospects_table
     
     # Now create the CRMService instance
     crm_service = CRMService()
@@ -1260,16 +1274,16 @@ def main():
         search_and_prospect_tab()
     
     with tab2:
-        render_analytics_dashboard()
+        _render_analytics_dashboard()
     
     with tab3:
-        render_search_history_tab()
+        _render_search_history_tab()
     
     with tab4:
         all_prospects_tab()
     
     with tab5:
-        render_batch_messaging()
+        _render_batch_messaging()
 
 def search_and_prospect_tab():
     """Search and prospecting functionality with CRM integration."""
