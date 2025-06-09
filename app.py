@@ -1,21 +1,22 @@
-import streamlit as st
-import googlemaps
-import openai
-import folium
-from streamlit_folium import st_folium
-import pandas as pd
-from typing import List, Dict, Optional, Tuple
-import requests
+# Standard library imports first
 from datetime import datetime, timedelta
 import time
-import json
-from geopy.distance import geodesic
-import plotly.express as px
-import plotly.graph_objects as go
-from collections import defaultdict
-import re
+import math
+from typing import List, Dict, Optional, Tuple
 
-# Set page config
+# Third-party imports (non-Streamlit)
+import googlemaps
+import pandas as pd
+import folium
+from dotenv import load_dotenv
+import openai
+from geopy.distance import geodesic
+
+# Streamlit imports
+import streamlit as st
+from streamlit_folium import st_folium
+
+# Set page config FIRST - before any other Streamlit commands or imports that use Streamlit
 st.set_page_config(
     page_title="Independent Dealer Prospector",
     page_icon="🎯",
@@ -23,35 +24,29 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize session state
-if 'search_results' not in st.session_state:
-    st.session_state.search_results = []
-if 'prospects' not in st.session_state:
-    st.session_state.prospects = []
-if 'contacted' not in st.session_state:
-    st.session_state.contacted = []
-if 'search_cache' not in st.session_state:
-    st.session_state.search_cache = {}
-if 'last_search' not in st.session_state:
-    st.session_state.last_search = {}
-if 'sales_notes' not in st.session_state:
-    st.session_state.sales_notes = {}
+# Global variables for services (initialized in main)
+crm_service = None
+gmaps_client = None
+openai_client = None
 
-# Configure API clients
-@st.cache_resource
-def init_clients():
-    try:
-        gmaps = googlemaps.Client(key=st.secrets["GOOGLE_MAPS_API_KEY"])
-        openai_client = openai.Client(api_key=st.secrets["OPENAI_API_KEY"])
-        return gmaps, openai_client
-    except Exception as e:
-        st.error("Error loading API keys. Please check your secrets.toml configuration.")
-        st.stop()
+def init_session_state():
+    """Initialize session state variables"""
+    if 'search_results' not in st.session_state:
+        st.session_state.search_results = []
+    if 'prospects' not in st.session_state:
+        st.session_state.prospects = []
+    if 'contacted' not in st.session_state:
+        st.session_state.contacted = []
+    if 'search_cache' not in st.session_state:
+        st.session_state.search_cache = {}
+    if 'last_search' not in st.session_state:
+        st.session_state.last_search = {}
+    if 'sales_notes' not in st.session_state:
+        st.session_state.sales_notes = {}
 
-gmaps, openai_client = init_clients()
-
-# Enhanced CSS with ultra-modern, clean design
-st.markdown("""
+def apply_css_styling():
+    """Apply enhanced CSS styling"""
+    st.markdown("""
     <style>
     /* Import Google Fonts */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
@@ -482,7 +477,7 @@ st.markdown("""
         }
     }
     </style>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate distance between two points in miles."""
@@ -508,8 +503,7 @@ def is_business_open(hours: List[str]) -> Tuple[bool, str]:
     except (ValueError, AttributeError, TypeError) as e:
         return False, "Hours not available"
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour
-def search_independent_dealers(zip_code: str, radius_miles: int = None, min_rating: float = 0.0) -> List[Dict]:
+def search_independent_dealers(zip_code: str, radius_miles: int = None) -> List[Dict]:
     """Efficient search for ALL used car dealers in ZIP code, excluding only franchises."""
     
     cache_key = f"{zip_code}_efficient_all_dealers"
@@ -520,7 +514,7 @@ def search_independent_dealers(zip_code: str, radius_miles: int = None, min_rati
     
     try:
         # Get location for the ZIP code
-        geocode_result = gmaps.geocode(zip_code)
+        geocode_result = gmaps_client.geocode(zip_code)
         if not geocode_result:
             st.error(f"Could not find location for ZIP code {zip_code}")
             return []
@@ -547,7 +541,7 @@ def search_independent_dealers(zip_code: str, radius_miles: int = None, min_rati
         # 1. Text-based searches with ZIP code
         for query in search_queries:
             try:
-                result = gmaps.places(query=query)
+                result = gmaps_client.places(query=query)
                 if result.get('results'):
                     for place in result['results']:
                         if place['place_id'] not in all_dealers:
@@ -557,7 +551,7 @@ def search_independent_dealers(zip_code: str, radius_miles: int = None, min_rati
                 # Check for next page token
                 while result.get('next_page_token'):
                     time.sleep(2)  # Required delay for pagination
-                    result = gmaps.places(query=query, page_token=result['next_page_token'])
+                    result = gmaps_client.places(query=query, page_token=result['next_page_token'])
                     if result.get('results'):
                         for place in result['results']:
                             if place['place_id'] not in all_dealers:
@@ -571,7 +565,7 @@ def search_independent_dealers(zip_code: str, radius_miles: int = None, min_rati
         # 2. Radius-based search around ZIP code
         try:
             # Search for car dealers within the area
-            radius_result = gmaps.places_nearby(
+            radius_result = gmaps_client.places_nearby(
                 location=(location['lat'], location['lng']),
                 radius=16000,  # ~10 miles
                 type='car_dealer'
@@ -586,7 +580,7 @@ def search_independent_dealers(zip_code: str, radius_miles: int = None, min_rati
             # Handle pagination
             while radius_result.get('next_page_token'):
                 time.sleep(2)
-                radius_result = gmaps.places_nearby(
+                radius_result = gmaps_client.places_nearby(
                     location=(location['lat'], location['lng']),
                     page_token=radius_result['next_page_token']
                 )
@@ -604,20 +598,33 @@ def search_independent_dealers(zip_code: str, radius_miles: int = None, min_rati
         # Process all found dealers
         processed_dealers = []
         
-        # Define franchise brands to exclude (ONLY clear franchises)
+        # Comprehensive franchise brand list for filtering
         franchise_brands = {
+            # Major automotive brands
             'toyota', 'honda', 'ford', 'chevrolet', 'chevy', 'nissan', 'mazda', 
             'hyundai', 'kia', 'subaru', 'volkswagen', 'vw', 'bmw', 'mercedes-benz', 
             'mercedes', 'audi', 'lexus', 'infiniti', 'acura', 'cadillac', 'lincoln',
             'buick', 'gmc', 'chrysler', 'dodge', 'jeep', 'ram', 'fiat', 'mitsubishi',
             'volvo', 'jaguar', 'land rover', 'porsche', 'mini', 'tesla', 'genesis',
-            'alfa romeo', 'maserati', 'bentley', 'rolls-royce', 'ferrari', 'lamborghini'
+            'alfa romeo', 'maserati', 'bentley', 'rolls-royce', 'ferrari', 'lamborghini',
+            'peugeot', 'citroen', 'renault', 'seat', 'skoda', 'smart', 'saab', 'hummer',
+            'saturn', 'pontiac', 'oldsmobile', 'plymouth', 'mercury', 'scion', 'isuzu',
+            'suzuki', 'daewoo', 'maybach', 'mclaren', 'aston martin', 'lotus',
+            # Commercial/truck brands
+            'freightliner', 'peterbilt', 'kenworth', 'mack', 'international', 'volvo trucks',
+            'western star', 'sterling', 'autocar', 'hino', 'isuzu commercial'
+        }
+        
+        # Franchise indicator words/phrases
+        franchise_indicators = {
+            'dealership', 'dealer', 'motors', 'automotive', 'auto group', 'car country',
+            'family of dealerships', 'auto mall', 'auto center', 'motor company'
         }
         
         for place_id, basic_info in all_dealers.items():
             try:
                 # Get detailed information
-                details = gmaps.place(
+                details = gmaps_client.place(
                     place_id,
                     fields=['name', 'formatted_address', 'formatted_phone_number', 
                            'website', 'rating', 'user_ratings_total', 'url', 
@@ -637,31 +644,95 @@ def search_independent_dealers(zip_code: str, radius_miles: int = None, min_rati
                     debug_info["filtered_out"] += 1
                     continue
                 
-                # Simple franchise check - ONLY exclude if it's clearly a franchise
+                # Enhanced franchise detection
                 name_lower = name.lower()
                 
                 # Check if it's a franchise dealership
                 is_franchise = False
+                
+                # Method 1: Direct brand match anywhere in name
                 for brand in franchise_brands:
-                    # Only mark as franchise if brand name is at the START of the business name
-                    # This indicates it's an official franchise
-                    if name_lower.startswith(brand + ' ') or name_lower == brand:
+                    if brand in name_lower:
                         is_franchise = True
                         debug_info["franchise"] += 1
                         break
                 
-                # Skip only clear franchises
+                # Method 2: Check for franchise indicator patterns
+                if not is_franchise:
+                    for brand in franchise_brands:
+                        for indicator in franchise_indicators:
+                            # Look for patterns like "Toyota Dealership", "Honda Motors", etc.
+                            if brand in name_lower and indicator in name_lower:
+                                is_franchise = True
+                                debug_info["franchise"] += 1
+                                break
+                        if is_franchise:
+                            break
+                
+                # Method 3: Check for obvious franchise patterns
+                if not is_franchise:
+                    franchise_patterns = [
+                        'certified pre-owned', 'pre-owned certified', 'certified used',
+                        'new & used', 'new and used', 'sales & service', 'sales and service',
+                        'service center', 'parts & service', 'collision center'
+                    ]
+                    
+                    # Only mark as franchise if it has BOTH a brand name AND franchise pattern
+                    has_brand = any(brand in name_lower for brand in franchise_brands)
+                    has_pattern = any(pattern in name_lower for pattern in franchise_patterns)
+                    
+                    if has_brand and has_pattern:
+                        is_franchise = True
+                        debug_info["franchise"] += 1
+                
+                # Skip franchises
                 if is_franchise:
                     continue
                 
-                # Skip obvious non-dealers
-                skip_keywords = ['rental', 'rent-a-car', 'enterprise', 'hertz', 'avis', 
-                               'budget', 'parts only', 'junkyard', 'salvage', 'towing',
-                               'car wash', 'detail', 'repair only', 'mechanic only']
+                # Skip obvious non-dealers and other businesses
+                skip_keywords = [
+                    'rental', 'rent-a-car', 'enterprise', 'hertz', 'avis', 'budget',
+                    'parts only', 'junkyard', 'salvage', 'towing', 'tow', 'wrecker',
+                    'car wash', 'detail', 'detailing', 'repair only', 'mechanic only',
+                    'body shop', 'collision', 'glass', 'windshield', 'tire', 'tires',
+                    'oil change', 'lube', 'transmission', 'brake', 'muffler', 'exhaust',
+                    'inspection', 'smog', 'emissions', 'insurance', 'financing only',
+                    'parts', 'accessories', 'aftermarket', 'customization', 'tuning',
+                    'racing', 'performance', 'restoration', 'classic car restoration',
+                    'motorcycle', 'truck rental', 'van rental', 'trailer',
+                    'parking', 'storage', 'valet', 'gas station', 'fuel', 'charging',
+                    'driving school', 'dmv', 'registration', 'title', 'notary'
+                ]
                 
                 if any(keyword in name_lower for keyword in skip_keywords):
                     debug_info["filtered_out"] += 1
                     continue
+                
+                # Positive filtering: Look for independent dealer indicators
+                independent_indicators = [
+                    'used cars', 'used car', 'pre-owned', 'auto sales', 'car sales',
+                    'independent', 'family owned', 'locally owned', 'wholesale',
+                    'car lot', 'auto lot', 'car mart', 'auto mart', 'car world',
+                    'auto world', 'car connection', 'auto connection', 'car plaza',
+                    'auto plaza', 'car emporium', 'auto emporium', 'quality used',
+                    'affordable cars', 'discount auto', 'budget cars', 'economy auto',
+                    'pre owned', 'previously owned', 'certified auto', 'select auto',
+                    'premier auto', 'elite auto', 'choice auto', 'best buy auto',
+                    'car gallery', 'auto gallery', 'car depot', 'auto depot'
+                ]
+                
+                # Boost scoring for clear independent dealers
+                has_independent_indicator = any(indicator in name_lower for indicator in independent_indicators)
+                
+                # If no clear independent indicators, be more cautious with generic names
+                if not has_independent_indicator:
+                    # Check if it's just a generic "automotive" or "motors" without clear used car focus
+                    generic_only = any(word in name_lower for word in ['automotive', 'motors', 'auto']) and \
+                                  not any(word in name_lower for word in ['used', 'pre-owned', 'sales', 'lot'])
+                    
+                    if generic_only:
+                        debug_info["filtered_out"] += 1
+                        continue
                 
                 # Calculate distance
                 dealer_location = details.get('geometry', {}).get('location', {})
@@ -673,11 +744,8 @@ def search_independent_dealers(zip_code: str, radius_miles: int = None, min_rati
                 else:
                     distance = 0
                 
-                # Apply minimum rating filter
+                # Removed minimum rating filter as requested
                 rating = details.get('rating', 0)
-                if rating and rating < min_rating:
-                    debug_info["filtered_out"] += 1
-                    continue
                 
                 # Simple scoring - less aggressive
                 prospect_score = 50  # Base score
@@ -704,6 +772,15 @@ def search_independent_dealers(zip_code: str, radius_miles: int = None, min_rati
                 if details.get('website'):
                     prospect_score += 10
                 if details.get('formatted_phone_number'):
+                    prospect_score += 10
+                
+                # Bonus for independent dealer indicators
+                if has_independent_indicator:
+                    prospect_score += 15
+                
+                # Extra bonus for very clear independent indicators
+                strong_independent_words = ['independent', 'family owned', 'locally owned', 'used cars', 'used car lot']
+                if any(word in name_lower for word in strong_independent_words):
                     prospect_score += 10
                 
                 # Create dealer record
@@ -734,7 +811,7 @@ def search_independent_dealers(zip_code: str, radius_miles: int = None, min_rati
         # Cache results
         st.session_state.search_cache[cache_key] = (datetime.now(), processed_dealers)
         
-        st.info(f"Debug Info: Text search found {debug_info['text_search']}, Radius search found {debug_info['radius_search']}, Filtered out {debug_info['filtered_out']}, Franchises excluded {debug_info['franchise']}")
+        st.info(f"🔍 Search Results: Text search: {debug_info['text_search']}, Radius search: {debug_info['radius_search']}, Franchises filtered: {debug_info['franchise']}, Other exclusions: {debug_info['filtered_out']}")
         
         st.success(f"✅ Found {len(processed_dealers)} used car dealers in {zip_code}")
         
@@ -823,13 +900,33 @@ def create_dealer_map(dealers: List[Dict], center_location: Dict) -> folium.Map:
         tooltip="Your Search Location"
     ).add_to(m)
     
-    # Add dealer markers
+    # Add dealer markers with CRM status colors
     for idx, dealer in enumerate(dealers):
-        # Color based on priority
-        if dealer.get('priority') == 'High':
-            color = 'green'
+        # Get CRM prospect if available
+        db_prospect = None
+        if hasattr(dealer, 'place_id'):
+            db_prospect = crm_service.get_prospect_by_place_id(dealer.place_id)
+        elif dealer.get('place_id'):
+            db_prospect = crm_service.get_prospect_by_place_id(dealer['place_id'])
+        
+        # Color based on CRM status
+        if db_prospect:
+            if db_prospect.status == 'dnc':
+                color = 'red'  # Do Not Call
+            elif db_prospect.is_visited:
+                color = 'purple'  # Visited
+            elif db_prospect.status == 'contacted':
+                color = 'orange'  # Contacted
+            elif db_prospect.priority == 'high':
+                color = 'green'  # High priority prospect
+            else:
+                color = 'blue'  # Standard prospect
         else:
-            color = 'blue'
+            # Fallback to priority-based coloring
+            if dealer.get('priority') == 'High':
+                color = 'green'
+            else:
+                color = 'blue'
         
         # Create popup content
         rating_text = f"{dealer.get('rating', 'N/A')}" if dealer.get('rating') else "Not rated"
@@ -1092,136 +1189,338 @@ def display_statistics(prospects: List[Dict]):
         """, unsafe_allow_html=True)
 
 def main():
-    """Main Streamlit application with ultra-modern multi-ZIP search capability."""
-    # Initialize session state
-    if 'prospects' not in st.session_state:
-        st.session_state.prospects = []
-    if 'search_cache' not in st.session_state:
-        st.session_state.search_cache = {}
-    if 'last_search' not in st.session_state:
-        st.session_state.last_search = {}
+    """Main application function"""
     
-    # Ultra-modern header with glassmorphism effect
-    st.markdown("""
-        <div class="main-header">
-            <h1 class="main-title">🎯 Independent Dealer Prospector</h1>
-            <p class="main-subtitle">B2B Sales Intelligence for Independent Used Car Dealerships</p>
-        </div>
-    """, unsafe_allow_html=True)
+    # Import database module first (should be safe)
+    from models.database import get_db_manager
+    
+    # Set global variables without instantiating CRMService yet
+    global crm_service, gmaps_client, openai_client
+    
+    # Initialize session state first
+    init_session_state()
+    
+    # Define cached initialization functions INSIDE main to avoid module-level execution
+    @st.cache_resource
+    def init_clients():
+        """Initialize API clients with caching"""
+        try:
+            gmaps = googlemaps.Client(key=st.secrets["GOOGLE_MAPS_API_KEY"])
+            openai_client = openai.Client(api_key=st.secrets["OPENAI_API_KEY"])
+            return gmaps, openai_client
+        except Exception as e:
+            st.error("Error loading API keys. Please check your secrets.toml configuration.")
+            st.stop()
+
+    @st.cache_resource
+    def init_crm():
+        """Initialize CRM database and services"""
+        try:
+            db_manager = get_db_manager()
+            db_manager.create_tables()
+            return True
+        except Exception as e:
+            st.error(f"Error initializing CRM database: {e}")
+            return False
+    
+    # Initialize API clients
+    gmaps_client, openai_client = init_clients()
+    
+    # Initialize CRM database
+    crm_initialized = init_crm()
+    
+    # Apply CSS styling
+    apply_css_styling()
+    
+    # NOW import CRMService and components (after all other Streamlit commands)
+    from services.crm_service import CRMService
+    from components.crm_ui import (
+        render_enhanced_prospect_card, 
+        render_search_history_tab, 
+        render_analytics_dashboard,
+        render_batch_messaging,
+        render_prospects_table
+    )
+    from components.maps import (
+        display_interactive_map,
+        display_map_statistics
+    )
+    
+    # Now create the CRMService instance
+    crm_service = CRMService()
+    
+    # Check CRM initialization
+    if not crm_initialized:
+        st.error("❌ Failed to initialize CRM database. Please check configuration.")
+        return
+    
+    # Main app header
+    st.title("🚗 Independent Dealer Prospector")
+    st.markdown("*Powered by AI-Enhanced Territory Management & CRM*")
+    
+    # Create tabs
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "🔍 Search & Prospect", 
+        "📊 Analytics", 
+        "📞 Search History",
+        "👥 All Prospects",
+        "📧 Batch Messaging"
+    ])
+    
+    with tab1:
+        search_and_prospect_tab()
+    
+    with tab2:
+        render_analytics_dashboard()
+    
+    with tab3:
+        render_search_history_tab()
+    
+    with tab4:
+        all_prospects_tab()
+    
+    with tab5:
+        render_batch_messaging()
+
+def search_and_prospect_tab():
+    """Search and prospecting functionality with CRM integration."""
+    
+    # Check for replay search
+    if 'replay_search' in st.session_state:
+        replay_data = st.session_state.replay_search
+        st.info(f"🔄 Replay search loaded: {replay_data['zip_codes']} (Radius: {replay_data['radius_miles']} miles)")
+        if st.button("🗑️ Clear Replay", type="secondary"):
+            del st.session_state.replay_search
+            st.rerun()
     
     # Modern territory management container
     st.markdown('<div class="territory-container">', unsafe_allow_html=True)
     st.markdown('<h2 class="territory-header">🗺️ Territory Management</h2>', unsafe_allow_html=True)
     
-    # Enhanced multi-ZIP code input section
+    # Search method selection
     st.markdown("""
-        <div class="zip-input-container">
-            <div class="zip-input-label">🎯 Target ZIP Codes (Up to 3)</div>
+        <div class="search-method-container">
+            <h3 style="margin: 0 0 1rem 0; color: #333; text-align: center;">🔍 Choose Your Search Method</h3>
+            <p style="margin: 0; color: #666; text-align: center;">Select how you'd like to discover independent used car dealers</p>
         </div>
     """, unsafe_allow_html=True)
     
-    # Create three columns for ZIP code inputs
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        zip_code_1 = st.text_input(
-            "Primary ZIP Code",
-            placeholder="e.g., 20110",
-            help="Enter the main ZIP code for your territory"
-        )
-    
-    with col2:
-        zip_code_2 = st.text_input(
-            "Secondary ZIP Code (Optional)",
-            placeholder="e.g., 20111",
-            help="Add a second ZIP code to expand your search"
-        )
-    
-    with col3:
-        zip_code_3 = st.text_input(
-            "Third ZIP Code (Optional)",
-            placeholder="e.g., 20112",
-            help="Add a third ZIP code for comprehensive coverage"
-        )
-    
-    # Collect all valid ZIP codes
-    zip_codes = []
-    for zip_code in [zip_code_1, zip_code_2, zip_code_3]:
-        if zip_code and zip_code.strip() and len(zip_code.strip()) == 5 and zip_code.strip().isdigit():
-            zip_codes.append(zip_code.strip())
-    
-    # Enhanced search parameters
-    min_rating = st.slider(
-        "⭐ Minimum Rating",
-        min_value=0.0,
-        max_value=5.0,
-        value=0.0,
-        step=0.1,
-        help="Filter dealers by minimum Google rating (0.0 = show all)"
+    search_method = st.radio(
+        "",
+        ["🗺️ Click on Map", "📍 Enter ZIP Codes", "🔄 Both Methods"],
+        horizontal=True,
+        help="Click on map for instant geographic search, enter ZIP codes for precise targeting, or use both!"
     )
     
-    # Ultra-modern search button with gradient
-    if st.button("🚀 Launch Multi-Territory Search", type="primary", use_container_width=True):
-        if not zip_codes:
-            st.error("⚠️ Please enter at least one valid 5-digit ZIP code.")
-        else:
-            # Search all ZIP codes
-            all_prospects = []
-            total_zip_codes = len(zip_codes)
+    # Interactive Map for Click-to-Search (always visible)
+    if search_method in ["🗺️ Click on Map", "🔄 Both Methods"]:
+        st.markdown("""
+            <div class="map-container">
+                <div class="map-instructions">
+                    <h4>💡 Interactive Search Map</h4>
+                    <p>Click anywhere in the United States to instantly find independent used car dealers in that area!</p>
+                </div>
+        """, unsafe_allow_html=True)
+        
+        # Create a default map centered on the US
+        default_center = {'lat': 39.8283, 'lng': -98.5795}  # Geographic center of US
+        
+        # If we have existing prospects, use them for the map, otherwise create empty map
+        map_prospects = st.session_state.get('prospects', [])
+        if map_prospects:
+            # Calculate center from existing prospects
+            all_lats = [p.get('location', {}).get('lat') for p in map_prospects if p.get('location', {}).get('lat')]
+            all_lngs = [p.get('location', {}).get('lng') for p in map_prospects if p.get('location', {}).get('lng')]
             
-            # Create progress tracking
-            search_progress = st.progress(0)
-            status_container = st.empty()
-            
-            for i, zip_code in enumerate(zip_codes):
-                status_container.markdown(f"""
-                    <div class="results-header">
-                        🔍 Searching Territory {i+1}/{total_zip_codes}: {zip_code}
-                        <br><small>Comprehensive search in progress...</small>
-                    </div>
-                """, unsafe_allow_html=True)
+            if all_lats and all_lngs:
+                default_center = {
+                    'lat': sum(all_lats) / len(all_lats),
+                    'lng': sum(all_lngs) / len(all_lngs)
+                }
+        
+                        # Display the interactive map with larger height
+                with st.container():
+                    display_interactive_map(map_prospects, default_center, gmaps_client, lambda zip_code: search_independent_dealers(zip_code, gmaps_client))
+        
+        st.markdown("</div>", unsafe_allow_html=True)  # Close map container
+        
+        # Add spacing
+        st.markdown("---")
+    
+    # ZIP Code input section (conditional)
+    if search_method in ["📍 Enter ZIP Codes", "🔄 Both Methods"]:
+        # Enhanced multi-ZIP code input section
+        st.markdown("""
+            <div class="zip-input-container">
+                <div class="zip-input-label">🎯 Target ZIP Codes (Up to 3)</div>
+            </div>
+        """, unsafe_allow_html=True)
+    
+        # Create three columns for ZIP code inputs
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            zip_code_1 = st.text_input(
+                "Primary ZIP Code",
+                placeholder="e.g., 20110",
+                help="Enter the main ZIP code for your territory"
+            )
+        
+        with col2:
+            zip_code_2 = st.text_input(
+                "Secondary ZIP Code (Optional)",
+                placeholder="e.g., 20111",
+                help="Add a second ZIP code to expand your search"
+            )
+        
+        with col3:
+            zip_code_3 = st.text_input(
+                "Third ZIP Code (Optional)",
+                placeholder="e.g., 20112",
+                help="Add a third ZIP code for comprehensive coverage"
+            )
+        
+        # Collect all valid ZIP codes
+        zip_codes = []
+        for zip_code in [zip_code_1, zip_code_2, zip_code_3]:
+            if zip_code and zip_code.strip() and len(zip_code.strip()) == 5 and zip_code.strip().isdigit():
+                zip_codes.append(zip_code.strip())
+        
+        # Enhanced search parameters with improved franchise filtering
+        col1, col2 = st.columns([3, 1])
+        
+        with col2:
+            if st.button("🗑️ Clear Cache", help="Clear search cache to use latest filtering rules"):
+                if hasattr(st.session_state, 'search_cache'):
+                    st.session_state.search_cache.clear()
+                st.success("Cache cleared!")
+        
+        # Ultra-modern search button with gradient (only show if ZIP codes method is selected)
+        if st.button("🚀 Launch Multi-Territory Search", type="primary", use_container_width=True):
+            if not zip_codes:
+                st.error("⚠️ Please enter at least one valid 5-digit ZIP code.")
+            else:
+                # Search all ZIP codes
+                all_prospects = []
+                total_zip_codes = len(zip_codes)
                 
-                # Search this ZIP code
-                prospects = search_independent_dealers(
-                    zip_code, 
-                    min_rating=min_rating
-                )
+                # Create progress tracking
+                search_progress = st.progress(0)
+                status_container = st.empty()
                 
-                # Add ZIP code source to each prospect
-                for prospect in prospects:
-                    prospect['source_zip'] = zip_code
+                for i, zip_code in enumerate(zip_codes):
+                    status_container.markdown(f"""
+                        <div class="results-header">
+                            🔍 Searching Territory {i+1}/{total_zip_codes}: {zip_code}
+                            <br><small>Comprehensive search in progress...</small>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Search this ZIP code
+                    prospects = search_independent_dealers(zip_code, gmaps_client)
+                    
+                    # Add ZIP code source to each prospect
+                    for prospect in prospects:
+                        prospect['source_zip'] = zip_code
+                    
+                    all_prospects.extend(prospects)
+                    
+                    # Update progress
+                    progress = (i + 1) / total_zip_codes
+                    search_progress.progress(progress)
+                    
+                    # Brief delay between searches
+                    time.sleep(0.5)
                 
-                all_prospects.extend(prospects)
+                # Remove duplicates based on place_id
+                seen_ids = set()
+                unique_prospects = []
+                for prospect in all_prospects:
+                    if prospect['place_id'] not in seen_ids:
+                        seen_ids.add(prospect['place_id'])
+                        unique_prospects.append(prospect)
                 
-                # Update progress
-                progress = (i + 1) / total_zip_codes
-                search_progress.progress(progress)
+                # Store results
+                st.session_state.prospects = unique_prospects
+                st.session_state.last_search = {
+                    'zip_codes': zip_codes,
+                    'total_found': len(unique_prospects)
+                }
                 
-                # Brief delay between searches
-                time.sleep(0.5)
-            
-            # Remove duplicates based on place_id
-            seen_ids = set()
-            unique_prospects = []
-            for prospect in all_prospects:
-                if prospect['place_id'] not in seen_ids:
-                    seen_ids.add(prospect['place_id'])
-                    unique_prospects.append(prospect)
-            
-            # Store results
-            st.session_state.prospects = unique_prospects
-            st.session_state.last_search = {
-                'zip_codes': zip_codes,
-                'min_rating': min_rating,
-                'total_found': len(unique_prospects)
-            }
-            
-            # Clear progress indicators
-            search_progress.empty()
-            status_container.empty()
-            
-            # Success message
-            st.success(f"✅ Found {len(unique_prospects)} used car dealers across {total_zip_codes} territories!")
+                # Clear progress indicators
+                search_progress.empty()
+                status_container.empty()
+                
+                # Save search and prospects to CRM database
+                try:
+                    # Create search record
+                    search_data = {
+                        'zip_codes': zip_codes,
+                        'radius_miles': 25,  # Default radius
+                        'min_rating': 0.0,  # Set to 0 since we removed the filter
+                        'total_found': len(unique_prospects),
+                        'new_prospects': 0,
+                        'duplicate_prospects': len(all_prospects) - len(unique_prospects),
+                        'search_duration_seconds': 0,  # Could track this
+                    }
+                    
+                    search_record = crm_service.save_search(search_data)
+                    
+                    # Prepare prospect data for database
+                    prospects_to_save = []
+                    new_count = 0
+                    
+                    for prospect in unique_prospects:
+                        prospect_data = {
+                            'place_id': prospect['place_id'],
+                            'name': prospect['name'],
+                            'address': prospect['address'],
+                            'phone': prospect.get('phone'),
+                            'website': prospect.get('website'),
+                            'rating': prospect.get('rating'),
+                            'total_reviews': prospect.get('user_ratings_total'),
+                            'latitude': prospect.get('location', {}).get('lat'),
+                            'longitude': prospect.get('location', {}).get('lng'),
+                            'ai_score': prospect.get('prospect_score', 0),
+                            'priority': 'high' if prospect.get('priority') == 'High' else 'standard',
+                            'source_zip': prospect.get('source_zip'),
+                            'distance_miles': prospect.get('distance')
+                        }
+                        
+                        # Check if prospect already exists
+                        existing = crm_service.get_prospect_by_place_id(prospect['place_id'])
+                        if not existing:
+                            new_count += 1
+                        
+                        prospects_to_save.append(prospect_data)
+                    
+                    # Bulk save prospects
+                    saved_prospects = crm_service.bulk_save_prospects(prospects_to_save)
+                    
+                    # Link prospects to search
+                    for i, saved_prospect in enumerate(saved_prospects):
+                        original_prospect = unique_prospects[i]
+                        is_new = not crm_service.get_prospect_by_place_id(saved_prospect.place_id)
+                        
+                        crm_service.link_search_prospect(
+                            search_record.id,
+                            saved_prospect.id,
+                            original_prospect.get('distance', 0),
+                            original_prospect.get('prospect_score', 0),
+                            is_new
+                        )
+                    
+                    # Update search record with actual new count
+                    search_data['new_prospects'] = new_count
+                    crm_service.save_search(search_data)
+                    
+                    st.info(f"💾 Saved {len(saved_prospects)} prospects to CRM ({new_count} new, {len(saved_prospects) - new_count} updated)")
+                    
+                except Exception as e:
+                    st.warning(f"Error saving to CRM: {e}")
+                    
+                # Success message
+                st.success(f"✅ Found {len(unique_prospects)} used car dealers across {total_zip_codes} territories!")
     
     st.markdown('</div>', unsafe_allow_html=True)  # Close territory container
     
@@ -1230,12 +1529,21 @@ def main():
         prospects = st.session_state.prospects
         last_search = st.session_state.last_search
         
-        # Modern results header with territory summary
-        zip_code_list = ", ".join(last_search['zip_codes'])
+        # Modern results header with territory summary - handle both map click and manual search formats
+        if 'zip_codes' in last_search:
+            zip_code_list = ", ".join(last_search['zip_codes'])
+            territory_text = f"Territories: {zip_code_list}"
+        elif 'zip_code' in last_search:
+            # Single ZIP from map click
+            zip_code_list = last_search['zip_code']
+            territory_text = f"Map Click: ZIP {zip_code_list}"
+        else:
+            territory_text = "Unknown search method"
+            
         st.markdown(f"""
             <div class="results-header">
                 🎯 {len(prospects)} Used Car Dealers Found
-                <br><small>Territories: {zip_code_list} | Min Rating: {last_search.get('min_rating', 0.0)}⭐</small>
+                <br><small>{territory_text}</small>
             </div>
         """, unsafe_allow_html=True)
         
@@ -1245,9 +1553,16 @@ def main():
         avg_score = sum(p.get('prospect_score', 0) for p in prospects) / len(prospects)
         contactable_count = len([p for p in prospects if p.get('phone')])
         
-        # Statistics by ZIP code
+        # Statistics by ZIP code - handle both manual search and map click formats
         zip_stats = {}
-        for zip_code in last_search['zip_codes']:
+        zip_codes_to_process = []
+        
+        if 'zip_codes' in last_search:
+            zip_codes_to_process = last_search['zip_codes']
+        elif 'zip_code' in last_search:
+            zip_codes_to_process = [last_search['zip_code']]
+            
+        for zip_code in zip_codes_to_process:
             zip_prospects = [p for p in prospects if p.get('source_zip') == zip_code]
             zip_stats[zip_code] = {
                 'count': len(zip_prospects),
@@ -1293,12 +1608,12 @@ def main():
             """, unsafe_allow_html=True)
         
         # ZIP code breakdown
-        if len(last_search['zip_codes']) > 1:
+        if len(zip_codes_to_process) > 1:
             st.markdown("### 🗺️ Territory Breakdown")
             
-            breakdown_cols = st.columns(len(last_search['zip_codes']))
+            breakdown_cols = st.columns(len(zip_codes_to_process))
             
-            for i, zip_code in enumerate(last_search['zip_codes']):
+            for i, zip_code in enumerate(zip_codes_to_process):
                 stats = zip_stats[zip_code]
                 with breakdown_cols[i]:
                     st.markdown(f"""
@@ -1337,8 +1652,8 @@ def main():
                 contact_filter = st.selectbox("📞 Contact Status", ["All", "Contacted", "Not Contacted"])
             
             with filter_col3:
-                if len(last_search['zip_codes']) > 1:
-                    zip_filter = st.selectbox("🗺️ Territory Filter", ["All"] + last_search['zip_codes'])
+                if len(zip_codes_to_process) > 1:
+                    zip_filter = st.selectbox("🗺️ Territory Filter", ["All"] + zip_codes_to_process)
                 else:
                     zip_filter = "All"
             
@@ -1360,9 +1675,9 @@ def main():
             # AI Sales Intelligence
             if st.button("🧠 Generate Sales Intelligence", type="primary", use_container_width=True):
                 with st.spinner("🤖 Analyzing multi-territory data and generating sales insights..."):
-                    intelligence = get_sales_intelligence(prospects, ", ".join(last_search['zip_codes']))
+                    intelligence = get_sales_intelligence(prospects, ", ".join(zip_codes_to_process))
                     
-                    st.markdown("#### 📊 B2B Sales Intelligence for Territories: " + ", ".join(last_search['zip_codes']))
+                    st.markdown("#### 📊 B2B Sales Intelligence for Territories: " + ", ".join(zip_codes_to_process))
                     
                     # Display the intelligence using native Streamlit markdown for better readability
                     with st.container():
@@ -1372,12 +1687,39 @@ def main():
                             </div>
                         """, unsafe_allow_html=True)
         
-        # Display filtered prospects
+        # Interactive map display
+        if prospects:
+            # Calculate center location from all prospects
+            all_lats = [p.get('location', {}).get('lat') for p in prospects if p.get('location', {}).get('lat')]
+            all_lngs = [p.get('location', {}).get('lng') for p in prospects if p.get('location', {}).get('lng')]
+            
+            if all_lats and all_lngs:
+                center_location = {
+                    'lat': sum(all_lats) / len(all_lats),
+                    'lng': sum(all_lngs) / len(all_lngs)
+                }
+                
+                # Display interactive map with click-to-search
+                display_interactive_map(prospects, center_location, gmaps_client, lambda zip_code: search_independent_dealers(zip_code, gmaps_client))
+                
+                # Display map statistics
+                display_map_statistics(prospects)
+        
+        # Display filtered prospects using enhanced CRM cards
         if filtered_prospects:
             st.markdown(f"### 🎯 Prospects ({len(filtered_prospects)} of {len(prospects)})")
             
+            # Convert to database prospects if possible
+            db_prospects = []
             for prospect in filtered_prospects:
-                display_prospect_card(prospect)
+                db_prospect = crm_service.get_prospect_by_place_id(prospect['place_id'])
+                if db_prospect:
+                    db_prospects.append(db_prospect)
+                else:
+                    db_prospects.append(prospect)
+            
+            for prospect in db_prospects:
+                render_enhanced_prospect_card(prospect, show_communications=True)
         else:
             st.markdown("""
                 <div class="empty-state">
@@ -1398,7 +1740,139 @@ def main():
                     Our multi-layer search technology will find prospects other tools miss.
                 </div>
             </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+
+def all_prospects_tab():
+    """Display all prospects in CRM with filtering and management."""
+    st.markdown("## 👥 All Prospects")
+    
+    # Get all prospects from database
+    all_prospects = crm_service.get_all_prospects()
+    
+    if not all_prospects:
+        st.info("No prospects found in CRM. Run some searches to populate your prospect database!")
+        return
+    
+    # Summary statistics
+    stats = crm_service.get_prospect_stats()
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    with col1:
+        st.metric("Total Prospects", stats['total_prospects'])
+    
+    with col2:
+        st.metric("Contacted", stats['contacted'])
+    
+    with col3:
+        st.metric("Visited", stats['visited'])
+    
+    with col4:
+        st.metric("High Priority", stats['high_priority'])
+    
+    with col5:
+        st.metric("Avg AI Score", f"{stats['avg_ai_score']:.1f}")
+    
+    # Filtering options
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        status_filter = st.selectbox(
+            "Status Filter",
+            ["All", "prospect", "contacted", "qualified", "visited", "dnc"]
+        )
+    
+    with col2:
+        priority_filter = st.selectbox(
+            "Priority Filter", 
+            ["All", "high", "standard", "low"]
+        )
+    
+    with col3:
+        visited_filter = st.selectbox(
+            "Visited Filter",
+            ["All", "Visited", "Not Visited"]
+        )
+    
+    with col4:
+        # Search by name/address
+        search_query = st.text_input("Search", placeholder="Search by name or address...")
+    
+    # Apply filters
+    filtered_prospects = all_prospects
+    
+    if status_filter != "All":
+        filtered_prospects = [p for p in filtered_prospects if p.status == status_filter]
+    
+    if priority_filter != "All":
+        filtered_prospects = [p for p in filtered_prospects if p.priority == priority_filter]
+    
+    if visited_filter == "Visited":
+        filtered_prospects = [p for p in filtered_prospects if p.is_visited]
+    elif visited_filter == "Not Visited":
+        filtered_prospects = [p for p in filtered_prospects if not p.is_visited]
+    
+    if search_query:
+        search_results = crm_service.search_prospects(search_query)
+        filtered_prospect_ids = {p.id for p in search_results}
+        filtered_prospects = [p for p in filtered_prospects if p.id in filtered_prospect_ids]
+    
+    st.markdown(f"### Showing {len(filtered_prospects)} of {len(all_prospects)} prospects")
+    
+    # Display options
+    view_mode = st.radio("View Mode", ["Cards", "Table", "Map"], horizontal=True)
+    
+    if view_mode == "Cards":
+        # Display as enhanced cards
+        for prospect in filtered_prospects:
+            render_enhanced_prospect_card(prospect, show_communications=True)
+    
+    elif view_mode == "Map":
+        # Display interactive map
+        if filtered_prospects:
+            # Convert prospects to dict format for map display
+            map_prospects = []
+            for prospect in filtered_prospects:
+                if prospect.latitude and prospect.longitude:
+                    prospect_dict = {
+                        'place_id': prospect.place_id,
+                        'name': prospect.name,
+                        'address': prospect.address,
+                        'phone': prospect.phone,
+                        'website': prospect.website,
+                        'rating': prospect.rating,
+                        'user_ratings_total': prospect.total_reviews,
+                        'location': {'lat': prospect.latitude, 'lng': prospect.longitude},
+                        'distance': prospect.distance_miles or 0,
+                        'prospect_score': prospect.ai_score,
+                        'priority': 'High' if prospect.priority == 'high' else 'Standard',
+                        'source_zip': prospect.source_zip
+                    }
+                    map_prospects.append(prospect_dict)
+            
+            if map_prospects:
+                # Calculate center location
+                all_lats = [p['location']['lat'] for p in map_prospects]
+                all_lngs = [p['location']['lng'] for p in map_prospects]
+                
+                center_location = {
+                    'lat': sum(all_lats) / len(all_lats),
+                    'lng': sum(all_lngs) / len(all_lngs)
+                }
+                
+                # Display interactive map with click-to-search
+                display_interactive_map(map_prospects, center_location, gmaps_client, lambda zip_code: search_independent_dealers(zip_code, gmaps_client))
+                
+                # Display map statistics
+                display_map_statistics(map_prospects)
+            else:
+                st.info("No prospects have location data available for map display.")
+        else:
+            st.info("No prospects to display on map.")
+    
+    else:
+        # Display as interactive table
+        render_prospects_table(filtered_prospects, show_actions=True)
 
 if __name__ == "__main__":
     main() 
