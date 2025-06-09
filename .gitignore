@@ -1,14 +1,29 @@
-# Environment variables
+# 🔒 Secrets & Environment Variables
+.streamlit/secrets.toml
 .env
 .env.local
+*.key
+*.pem
 
-# Python
+# 📊 Database Files
+*.db
+*.sqlite
+*.sqlite3
+crm_data.db
+
+# 🧪 Testing & Coverage
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+
+# 🐍 Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-env/
 build/
 develop-eggs/
 dist/
@@ -24,16 +39,38 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
-# Streamlit
-.streamlit/
+# 📝 Logs
+*.log
+logs/
 
-# IDE
-.idea/
+# 💻 IDE & Editors
 .vscode/
+.idea/
 *.swp
 *.swo
+*~
 
-# OS
+# 🗂️ OS Files
 .DS_Store
-Thumbs.db 
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 📦 Node modules (if any frontend tools)
+node_modules/
+npm-debug.log*
+
+# 🔧 Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# 📋 Backup files
+*.bak
+*.backup 
