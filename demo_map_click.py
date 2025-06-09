@@ -4,7 +4,6 @@ This script demonstrates the new features added to the Independent Dealer Prospe
 """
 
 import streamlit as st
-import googlemaps
 from components.maps import latlng_to_zip, handle_map_click
 from app import search_independent_dealers, init_clients
 
@@ -35,7 +34,7 @@ def demo_reverse_geocoding():
             st.write(f"Lat: {example['lat']}, Lng: {example['lng']}")
         
         with col3:
-            if st.button(f"Get ZIP", key=f"zip_{example['name']}"):
+            if st.button("Get ZIP", key=f"zip_{example['name']}"):
                 with st.spinner("Getting ZIP code..."):
                     zip_code = latlng_to_zip(example['lat'], example['lng'], gmaps)
                     if zip_code:

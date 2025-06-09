@@ -6,8 +6,7 @@ Handles map click-to-search workflow with reverse geocoding and auto-search.
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
-import googlemaps
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from datetime import datetime
 import time
 import logging

@@ -1,20 +1,16 @@
 # Standard library imports first
 from datetime import datetime, timedelta
 import time
-import math
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Tuple
 
 # Third-party imports (non-Streamlit)
 import googlemaps
-import pandas as pd
 import folium
-from dotenv import load_dotenv
 import openai
 from geopy.distance import geodesic
 
 # Streamlit imports
 import streamlit as st
-from streamlit_folium import st_folium
 
 # Set page config FIRST - before any other Streamlit commands or imports that use Streamlit
 st.set_page_config(
@@ -24,17 +20,51 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Import CRM components directly at module level
+try:
+    from services.crm_service import CRMService
+    from components.crm_ui import (
+        render_enhanced_prospect_card, 
+        render_search_history_tab, 
+        render_analytics_dashboard,
+        render_batch_messaging,
+        render_prospects_table
+    )
+    from components.maps import (
+        display_interactive_map,
+        display_map_statistics
+    )
+    CRM_IMPORTS_AVAILABLE = True
+except ImportError as e:
+    st.error(f"Failed to import CRM components: {e}")
+    CRM_IMPORTS_AVAILABLE = False
+    
+    # Define fallback functions to prevent NoneType errors
+    def render_enhanced_prospect_card(*args, **kwargs):
+        st.error("CRM UI components not available")
+    
+    def render_search_history_tab(*args, **kwargs):
+        st.error("CRM UI components not available")
+    
+    def render_analytics_dashboard(*args, **kwargs):
+        st.error("CRM UI components not available")
+    
+    def render_batch_messaging(*args, **kwargs):
+        st.error("CRM UI components not available")
+    
+    def render_prospects_table(*args, **kwargs):
+        st.error("CRM UI components not available")
+    
+    def display_interactive_map(*args, **kwargs):
+        st.error("Map components not available")
+    
+    def display_map_statistics(*args, **kwargs):
+        st.error("Map components not available")
+
 # Global variables for services (initialized in main)
 crm_service = None
 gmaps_client = None
 openai_client = None
-
-# Global variables for imported functions (initialized in main)
-render_enhanced_prospect_card = None
-render_search_history_tab = None
-render_analytics_dashboard = None
-render_batch_messaging = None
-render_prospects_table = None
 
 def init_session_state():
     """Initialize session state variables"""
@@ -507,11 +537,13 @@ def is_business_open(hours: List[str]) -> Tuple[bool, str]:
                 return True, hour_text
         
         return False, "Hours not available"
-    except (ValueError, AttributeError, TypeError) as e:
+    except (ValueError, AttributeError, TypeError):
         return False, "Hours not available"
 
 def search_independent_dealers(zip_code: str, radius_miles: int = None) -> List[Dict]:
     """Efficient search for ALL used car dealers in ZIP code, excluding only franchises."""
+    
+    global gmaps_client
     
     cache_key = f"{zip_code}_efficient_all_dealers"
     if cache_key in st.session_state.search_cache:
@@ -830,6 +862,9 @@ def search_independent_dealers(zip_code: str, radius_miles: int = None) -> List[
 
 def get_sales_intelligence(prospects: List[Dict], territory: str) -> str:
     """Generate B2B sales intelligence for territory planning."""
+    
+    global openai_client
+    
     if not prospects:
         return "No used car dealer prospects found to analyze."
     
@@ -893,6 +928,9 @@ def get_sales_intelligence(prospects: List[Dict], territory: str) -> str:
 
 def create_dealer_map(dealers: List[Dict], center_location: Dict) -> folium.Map:
     """Create an interactive map with dealer locations."""
+    
+    global crm_service
+    
     m = folium.Map(
         location=[center_location['lat'], center_location['lng']],
         zoom_start=11,
@@ -1211,7 +1249,7 @@ def main():
     try:
         gmaps_client = googlemaps.Client(key=st.secrets["GOOGLE_MAPS_API_KEY"])
         openai_client = openai.Client(api_key=st.secrets["OPENAI_API_KEY"])
-    except Exception as e:
+    except Exception:
         st.error("Error loading API keys. Please check your secrets.toml configuration.")
         st.stop()
     
@@ -1228,26 +1266,10 @@ def main():
     # Apply CSS styling
     apply_css_styling()
     
-    # NOW import CRMService and components (after all other Streamlit commands)
-    from services.crm_service import CRMService
-    from components.crm_ui import (
-        render_enhanced_prospect_card as _render_enhanced_prospect_card, 
-        render_search_history_tab as _render_search_history_tab, 
-        render_analytics_dashboard as _render_analytics_dashboard,
-        render_batch_messaging as _render_batch_messaging,
-        render_prospects_table as _render_prospects_table
-    )
-    from components.maps import (
-        display_interactive_map,
-        display_map_statistics
-    )
-    
-    # Make imported functions available globally
-    render_enhanced_prospect_card = _render_enhanced_prospect_card
-    render_search_history_tab = _render_search_history_tab
-    render_analytics_dashboard = _render_analytics_dashboard
-    render_batch_messaging = _render_batch_messaging
-    render_prospects_table = _render_prospects_table
+    # Check if CRM components are available
+    if not CRM_IMPORTS_AVAILABLE:
+        st.error("❌ Failed to import CRM components. Please check your installation.")
+        return
     
     # Now create the CRMService instance
     crm_service = CRMService()
@@ -1274,19 +1296,21 @@ def main():
         search_and_prospect_tab()
     
     with tab2:
-        _render_analytics_dashboard()
+        render_analytics_dashboard()
     
     with tab3:
-        _render_search_history_tab()
+        render_search_history_tab()
     
     with tab4:
         all_prospects_tab()
     
     with tab5:
-        _render_batch_messaging()
+        render_batch_messaging()
 
 def search_and_prospect_tab():
     """Search and prospecting functionality with CRM integration."""
+    
+    global crm_service, gmaps_client, openai_client
     
     # Check for replay search
     if 'replay_search' in st.session_state:
@@ -1341,9 +1365,9 @@ def search_and_prospect_tab():
                     'lng': sum(all_lngs) / len(all_lngs)
                 }
         
-                        # Display the interactive map with larger height
-                with st.container():
-                    display_interactive_map(map_prospects, default_center, gmaps_client, lambda zip_code: search_independent_dealers(zip_code, gmaps_client))
+        # Display the interactive map with larger height - ALWAYS show for click-to-search
+        with st.container():
+            display_interactive_map(map_prospects, default_center, gmaps_client, lambda zip_code: search_independent_dealers(zip_code))
         
         st.markdown("</div>", unsafe_allow_html=True)  # Close map container
         
@@ -1420,7 +1444,7 @@ def search_and_prospect_tab():
                     """, unsafe_allow_html=True)
                     
                     # Search this ZIP code
-                    prospects = search_independent_dealers(zip_code, gmaps_client)
+                    prospects = search_independent_dealers(zip_code)
                     
                     # Add ZIP code source to each prospect
                     for prospect in prospects:
@@ -1551,7 +1575,6 @@ def search_and_prospect_tab():
         """, unsafe_allow_html=True)
         
         # Enhanced territory statistics
-        contacted_count = len([p for p in prospects if p.get('contacted', False)])
         high_priority_count = len([p for p in prospects if p.get('priority') == 'High'])
         avg_score = sum(p.get('prospect_score', 0) for p in prospects) / len(prospects)
         contactable_count = len([p for p in prospects if p.get('phone')])
@@ -1703,7 +1726,7 @@ def search_and_prospect_tab():
                 }
                 
                 # Display interactive map with click-to-search
-                display_interactive_map(prospects, center_location, gmaps_client, lambda zip_code: search_independent_dealers(zip_code, gmaps_client))
+                display_interactive_map(prospects, center_location, gmaps_client, lambda zip_code: search_independent_dealers(zip_code))
                 
                 # Display map statistics
                 display_map_statistics(prospects)
@@ -1747,6 +1770,9 @@ def search_and_prospect_tab():
 
 def all_prospects_tab():
     """Display all prospects in CRM with filtering and management."""
+    
+    global crm_service, gmaps_client, openai_client
+    
     st.markdown("## 👥 All Prospects")
     
     # Get all prospects from database
@@ -1864,7 +1890,7 @@ def all_prospects_tab():
                 }
                 
                 # Display interactive map with click-to-search
-                display_interactive_map(map_prospects, center_location, gmaps_client, lambda zip_code: search_independent_dealers(zip_code, gmaps_client))
+                display_interactive_map(map_prospects, center_location, gmaps_client, lambda zip_code: search_independent_dealers(zip_code))
                 
                 # Display map statistics
                 display_map_statistics(map_prospects)

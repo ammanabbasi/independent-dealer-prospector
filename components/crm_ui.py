@@ -3,14 +3,15 @@ CRM UI Components for Independent Dealer Prospector
 Enhanced UI components with communication panels, visited tracking, and history.
 """
 
+# Standard library imports
+from datetime import datetime
+
+# Third-party imports
 import streamlit as st
 import pandas as pd
 from typing import List
-from datetime import datetime
 import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
-import hashlib
-import time
 
 from services.crm_service import crm_service
 from services.communication_service import communication_service
@@ -34,26 +35,33 @@ def render_communication_panel(prospect_id: int, prospect_data):
     phone = _get_prospect_value(prospect_data, 'phone', '')
     email = _get_prospect_value(prospect_data, 'contact_email', '')
     name = _get_prospect_value(prospect_data, 'name', 'Dealership')
+    place_id = _get_prospect_value(prospect_data, 'place_id', 'unknown')
+    
+    # Generate unique widget counter for this panel
+    if 'widget_counter' not in st.session_state:
+        st.session_state.widget_counter = 0
+    st.session_state.widget_counter += 1
+    panel_counter = st.session_state.widget_counter
     
     # Communication buttons
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("📞 Call", key=f"call_{prospect_id}", use_container_width=True):
+        if st.button("📞 Call", key=f"call_{prospect_id}_{place_id}_{panel_counter}", use_container_width=True):
             if phone:
                 show_call_modal(prospect_id, phone, name)
             else:
                 st.error("No phone number available")
     
     with col2:
-        if st.button("📧 Email", key=f"email_{prospect_id}", use_container_width=True):
+        if st.button("📧 Email", key=f"email_{prospect_id}_{place_id}_{panel_counter}", use_container_width=True):
             if email:
                 show_email_modal(prospect_id, email, name)
             else:
                 st.error("No email address available")
     
     with col3:
-        if st.button("💬 SMS", key=f"sms_{prospect_id}", use_container_width=True):
+        if st.button("💬 SMS", key=f"sms_{prospect_id}_{place_id}_{panel_counter}", use_container_width=True):
             if phone:
                 show_sms_modal(prospect_id, phone, name)
             else:
@@ -76,6 +84,12 @@ def render_communication_panel(prospect_id: int, prospect_data):
 
 def show_call_modal(prospect_id: int, phone: str, name: str):
     """Show call initiation modal"""
+    # Generate unique keys for this modal
+    if 'widget_counter' not in st.session_state:
+        st.session_state.widget_counter = 0
+    st.session_state.widget_counter += 1
+    modal_counter = st.session_state.widget_counter
+    
     with st.container():
         st.markdown("#### 📞 Make Call")
         st.write(f"**Calling:** {name}")
@@ -84,12 +98,13 @@ def show_call_modal(prospect_id: int, phone: str, name: str):
         # Call options
         message = st.text_area(
             "Call Script (optional)",
-            placeholder="Enter a custom message for the call..."
+            placeholder="Enter a custom message for the call...",
+            key=f"call_message_{prospect_id}_{modal_counter}"
         )
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("📞 Initiate Call", use_container_width=True):
+            if st.button("📞 Initiate Call", use_container_width=True, key=f"initiate_call_{prospect_id}_{modal_counter}"):
                 result = communication_service.make_call(prospect_id, phone, message)
                 if result['success']:
                     st.success(f"Call initiated! SID: {result['call_sid']}")
@@ -97,7 +112,7 @@ def show_call_modal(prospect_id: int, phone: str, name: str):
                     st.error(f"Call failed: {result['error']}")
         
         with col2:
-            if st.button("📝 Log Manual Call", use_container_width=True):
+            if st.button("📝 Log Manual Call", use_container_width=True, key=f"log_call_{prospect_id}_{modal_counter}"):
                 # Log a manual call record
                 comm_data = {
                     'channel': 'call',
@@ -110,6 +125,12 @@ def show_call_modal(prospect_id: int, phone: str, name: str):
 
 def show_email_modal(prospect_id: int, email: str, name: str):
     """Show email composition modal"""
+    # Generate unique keys for this modal
+    if 'widget_counter' not in st.session_state:
+        st.session_state.widget_counter = 0
+    st.session_state.widget_counter += 1
+    modal_counter = st.session_state.widget_counter
+    
     with st.container():
         st.markdown("#### 📧 Send Email")
         st.write(f"**To:** {email}")
@@ -120,7 +141,8 @@ def show_email_modal(prospect_id: int, email: str, name: str):
         
         selected_template = st.selectbox(
             "Email Template",
-            ["Custom"] + template_names
+            ["Custom"] + template_names,
+            key=f"email_template_{prospect_id}_{modal_counter}"
         )
         
         if selected_template != "Custom":
@@ -128,19 +150,15 @@ def show_email_modal(prospect_id: int, email: str, name: str):
             subject = template['subject'].replace('{{dealership_name}}', name)
             content = f"Dear {name} team,\n\n[Template content would be loaded here]\n\nBest regards,\nSales Team"
         else:
-            subject = st.text_input("Subject", value=f"Automotive Solutions for {name}")
-            content = st.text_area(
-                "Email Content",
-                height=200,
-                placeholder="Enter your email message here..."
-            )
+            subject = f"Automotive Solutions for {name}"
+            content = ""
         
-        subject = st.text_input("Subject", value=subject)
-        content = st.text_area("Email Content", value=content, height=200)
+        subject = st.text_input("Subject", value=subject, key=f"email_subject_{prospect_id}_{modal_counter}")
+        content = st.text_area("Email Content", value=content, height=200, key=f"email_content_{prospect_id}_{modal_counter}")
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("📧 Send Email", use_container_width=True):
+            if st.button("📧 Send Email", use_container_width=True, key=f"send_email_{prospect_id}_{modal_counter}"):
                 if subject and content:
                     result = communication_service.send_email(
                         prospect_id, email, subject, content
@@ -153,12 +171,18 @@ def show_email_modal(prospect_id: int, email: str, name: str):
                     st.error("Please enter subject and content")
         
         with col2:
-            if st.button("📝 Save Draft", use_container_width=True):
+            if st.button("📝 Save Draft", use_container_width=True, key=f"save_draft_{prospect_id}_{modal_counter}"):
                 # Save as draft (could implement later)
                 st.info("Draft functionality coming soon")
 
 def show_sms_modal(prospect_id: int, phone: str, name: str):
     """Show SMS composition modal"""
+    # Generate unique keys for this modal
+    if 'widget_counter' not in st.session_state:
+        st.session_state.widget_counter = 0
+    st.session_state.widget_counter += 1
+    modal_counter = st.session_state.widget_counter
+    
     with st.container():
         st.markdown("#### 💬 Send SMS")
         st.write(f"**To:** {phone}")
@@ -170,7 +194,7 @@ def show_sms_modal(prospect_id: int, phone: str, name: str):
         selected_template = st.selectbox(
             "SMS Template",
             ["Custom"] + template_names,
-            key=f"sms_template_{prospect_id}"
+            key=f"sms_template_{prospect_id}_{modal_counter}"
         )
         
         if selected_template != "Custom":
@@ -183,7 +207,8 @@ def show_sms_modal(prospect_id: int, phone: str, name: str):
             "Message (160 chars max)",
             value=message,
             max_chars=160,
-            height=100
+            height=100,
+            key=f"sms_message_{prospect_id}_{modal_counter}"
         )
         
         char_count = len(message)
@@ -191,7 +216,7 @@ def show_sms_modal(prospect_id: int, phone: str, name: str):
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("💬 Send SMS", use_container_width=True):
+            if st.button("💬 Send SMS", use_container_width=True, key=f"send_sms_{prospect_id}_{modal_counter}"):
                 if message:
                     result = communication_service.send_sms(prospect_id, phone, message)
                     if result['success']:
@@ -202,7 +227,7 @@ def show_sms_modal(prospect_id: int, phone: str, name: str):
                     st.error("Please enter a message")
         
         with col2:
-            if st.button("📝 Log Manual SMS", use_container_width=True):
+            if st.button("📝 Log Manual SMS", use_container_width=True, key=f"log_sms_{prospect_id}_{modal_counter}"):
                 comm_data = {
                     'channel': 'sms',
                     'direction': 'outbound',

@@ -5,7 +5,7 @@ Handles Twilio (voice/SMS) and SendGrid (email) integrations with logging.
 
 import os
 import logging
-from typing import Dict, Optional, List
+from typing import Dict, List
 from datetime import datetime
 from twilio.rest import Client as TwilioClient
 from twilio.base.exceptions import TwilioException
@@ -325,7 +325,7 @@ class CommunicationService:
                 
                 if message_id and event_type:
                     # Update communication status in database
-                    logger.info(f"SendGrid webhook: {message_id} event {event_type}")
+                    logger.info(f"SendGrid webhook: {message_id} event {event_type} at {timestamp}")
             
             return {'success': True}
             
