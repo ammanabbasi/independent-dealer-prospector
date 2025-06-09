@@ -1200,34 +1200,23 @@ def main():
     # Initialize session state first
     init_session_state()
     
-    # Define cached initialization functions INSIDE main to avoid module-level execution
-    @st.cache_resource
-    def init_clients():
-        """Initialize API clients with caching"""
-        try:
-            gmaps = googlemaps.Client(key=st.secrets["GOOGLE_MAPS_API_KEY"])
-            openai_client = openai.Client(api_key=st.secrets["OPENAI_API_KEY"])
-            return gmaps, openai_client
-        except Exception as e:
-            st.error("Error loading API keys. Please check your secrets.toml configuration.")
-            st.stop()
-
-    @st.cache_resource
-    def init_crm():
-        """Initialize CRM database and services"""
-        try:
-            db_manager = get_db_manager()
-            db_manager.create_tables()
-            return True
-        except Exception as e:
-            st.error(f"Error initializing CRM database: {e}")
-            return False
+    # Initialize API clients directly (no caching to avoid nested function issues)
+    try:
+        gmaps_client = googlemaps.Client(key=st.secrets["GOOGLE_MAPS_API_KEY"])
+        openai_client = openai.Client(api_key=st.secrets["OPENAI_API_KEY"])
+    except Exception as e:
+        st.error("Error loading API keys. Please check your secrets.toml configuration.")
+        st.stop()
     
-    # Initialize API clients
-    gmaps_client, openai_client = init_clients()
-    
-    # Initialize CRM database
-    crm_initialized = init_crm()
+    # Initialize CRM database directly
+    try:
+        from models.database import get_db_manager
+        db_manager = get_db_manager()
+        db_manager.create_tables()
+        crm_initialized = True
+    except Exception as e:
+        st.error(f"Error initializing CRM database: {e}")
+        crm_initialized = False
     
     # Apply CSS styling
     apply_css_styling()
