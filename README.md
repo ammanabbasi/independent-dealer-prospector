@@ -1,6 +1,6 @@
-# 🎯 Independent Dealer Prospector - B2B Sales Intelligence
+# 🎯 Independent Dealer Prospector CRM
 
-**Professional B2B Sales Intelligence Platform for Independent Used Car Dealerships**
+**Complete Sales Intelligence & CRM Platform for Independent Used Car Dealerships**
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://your-app-url-here.streamlit.app)
 
@@ -8,7 +8,7 @@
 
 **🌐 Access the live app:** [https://your-app-url-here.streamlit.app](https://your-app-url-here.streamlit.app)
 
-This powerful B2B sales intelligence tool helps sales professionals at SaaS platforms identify, analyze, and prospect independent used car dealerships across multiple territories.
+This comprehensive CRM platform helps sales professionals identify, analyze, prospect, and manage relationships with independent used car dealerships across multiple territories. Features full CRM functionality with persistent data storage, multi-channel communications, and advanced analytics.
 
 ## ✨ **Key Features**
 
@@ -24,17 +24,27 @@ This powerful B2B sales intelligence tool helps sales professionals at SaaS plat
 - **Territory Analysis**: AI-generated insights and recommendations
 - **Sales Strategy**: Customized approach suggestions for each territory
 
-### 📊 **Professional B2B Features**
-- **Contact Management**: Track contacted vs. not contacted prospects
-- **Sales Notes**: Individual prospect notes for decision makers, pain points, and next steps
-- **Territory Statistics**: Comprehensive analytics and breakdown by ZIP code
-- **Sorting & Filtering**: Advanced filtering by priority, contact status, and territory
+### 📊 **Complete CRM Features**
+- **Persistent Data Storage**: SQLite/PostgreSQL database for permanent prospect storage
+- **Multi-Channel Communications**: Built-in call, email, and SMS capabilities via Twilio & SendGrid
+- **Visit Tracking**: Mark and track visited dealerships with map color coding
+- **Activity Timeline**: Complete communication history for each prospect
+- **Search History**: Save and replay previous searches with one-click
+- **Advanced Analytics**: Dashboard with conversion rates, territory performance, and trends
 
 ### 🎨 **Ultra-Modern Interface**
 - **Glassmorphism Design**: Professional, modern UI with gradient effects
 - **Interactive Cards**: Hover effects and smooth animations
 - **Responsive Layout**: Perfect on desktop, tablet, and mobile devices
 - **B2B Color Scheme**: Professional purple/blue gradients
+
+### 🗺️ **Interactive Map Click-to-Search** ⭐ *NEW*
+- **Click Anywhere on Map**: Instantly search for dealers in any US ZIP code by clicking the map
+- **Real-Time Reverse Geocoding**: Automatically converts coordinates to ZIP codes (US only)  
+- **Smart Debouncing**: Prevents duplicate searches with 200ms debouncing and 5-minute cooldown
+- **Auto-CRM Integration**: New dealers are automatically added to your CRM database
+- **Color-Coded Status**: Map markers show CRM status (contacted, visited, priority, etc.)
+- **Search History Logging**: All map clicks are logged with `source="map_click"` for analytics
 
 ### 🔍 **Intelligent Search Algorithm**
 - **Franchise Filtering**: Automatically excludes major franchise dealers
@@ -45,10 +55,13 @@ This powerful B2B sales intelligence tool helps sales professionals at SaaS plat
 ## 🛠️ **Technology Stack**
 
 - **Frontend**: Streamlit with custom CSS and modern design
+- **Database**: SQLAlchemy ORM with SQLite/PostgreSQL support
+- **Communications**: Twilio (voice/SMS) and SendGrid (email) integration
 - **Maps Integration**: Google Maps API with Places API
 - **AI Intelligence**: OpenAI GPT for sales insights
 - **Data Processing**: Pandas, GeoPy for location calculations
 - **Visualization**: Plotly for statistics, Folium for interactive maps
+- **Testing**: Pytest with 90%+ test coverage
 
 ## 🚀 **Quick Start**
 
@@ -63,16 +76,26 @@ Simply visit the live application: [https://your-app-url-here.streamlit.app](htt
    cd used-car-dealer-finder
    ```
 
-2. **Install dependencies**
+2. **Install dependencies and setup environment**
    ```bash
-   pip install -r requirements.txt
+   python setup_environment.py
    ```
 
-3. **Set up API keys**
-   Create `.streamlit/secrets.toml`:
+3. **Configure API keys**
+   Edit `.streamlit/secrets.toml` (auto-created from template):
    ```toml
    GOOGLE_MAPS_API_KEY = "your-google-maps-api-key"
    OPENAI_API_KEY = "your-openai-api-key"
+   
+   # CRM Database
+   DATABASE_URL = "sqlite:///crm_data.db"
+   
+   # Communication Services (Optional)
+   TWILIO_ACCOUNT_SID = "your-twilio-account-sid"
+   TWILIO_AUTH_TOKEN = "your-twilio-auth-token"
+   TWILIO_PHONE_NUMBER = "your-twilio-phone-number"
+   SENDGRID_API_KEY = "your-sendgrid-api-key"
+   FROM_EMAIL = "sales@yourdomain.com"
    ```
 
 4. **Run the application**
@@ -90,19 +113,46 @@ Simply visit the live application: [https://your-app-url-here.streamlit.app](htt
 - Required for AI sales intelligence features
 - Get your key: [OpenAI Platform](https://platform.openai.com/)
 
+## 🗺️ **Interactive Map Features**
+
+### **How to Use Click-to-Search**
+1. **Start with a ZIP Search**: Run a normal search to populate initial results and display the map
+2. **Click Anywhere on Map**: Click any location within the United States 
+3. **Automatic Processing**: The app will:
+   - Reverse geocode the click coordinates to the nearest ZIP code
+   - Automatically search for independent used car dealers in that ZIP
+   - Add new dealers to your CRM database
+   - Update the map with new dealer markers
+   - Show success notifications with counts
+
+### **Map Color Coding**
+- 🔴 **Red Markers**: Do Not Call (DNC) status
+- 🟣 **Purple Markers**: Visited dealerships  
+- 🟠 **Orange Markers**: Already contacted
+- 🟢 **Green Markers**: High priority prospects
+- 🔵 **Blue Markers**: Standard prospects
+
+### **Smart Features**
+- **Duplicate Prevention**: Won't search the same ZIP twice within 5 minutes
+- **US Only**: Only works for clicks within United States boundaries
+- **Performance Optimized**: Cached reverse geocoding results for 24 hours
+- **CRM Integration**: All new prospects are automatically saved to database
+
 ## 📈 **Use Cases**
 
 ### **For SaaS Sales Teams**
 - **Territory Planning**: Identify all independent dealers in target markets
-- **Lead Generation**: Discover high-quality prospects with scoring system
+- **Lead Generation**: Discover high-quality prospects with scoring system  
 - **Competitive Intelligence**: Understand market density and opportunities
 - **Sales Pipeline**: Track contact attempts and prospect status
+- **Map-Based Prospecting**: Discover dealers in adjacent territories with click-to-search
 
 ### **For Sales Managers**
 - **Team Territory Assignment**: Divide territories based on prospect data
 - **Performance Tracking**: Monitor team contact rates and coverage
-- **Market Analysis**: AI-powered insights for strategic planning
+- **Market Analysis**: AI-powered insights for strategic planning  
 - **ROI Optimization**: Focus efforts on highest-scoring prospects
+- **Visual Territory Planning**: Use interactive maps to plan coverage areas
 
 ## 🎯 **Target Audience**
 

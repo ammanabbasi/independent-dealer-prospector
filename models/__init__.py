@@ -1,0 +1,1 @@
+# Models package for Independent Dealer Prospector CRM 

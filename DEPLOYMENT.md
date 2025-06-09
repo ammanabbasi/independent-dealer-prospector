@@ -1,4 +1,4 @@
-# 🚀 Deployment Guide - Independent Dealer Prospector
+# 🚀 Deployment Guide - Independent Dealer Prospector CRM
 
 ## 📋 **Pre-Deployment Checklist**
 
@@ -36,10 +36,22 @@
 
 3. **Configure Secrets**
    - In the app settings, go to "Secrets"
-   - Add your API keys:
+   - Add your API keys and CRM configuration:
    ```toml
    GOOGLE_MAPS_API_KEY = "your-actual-google-maps-api-key"
    OPENAI_API_KEY = "your-actual-openai-api-key"
+   
+   # CRM Database Configuration
+   DATABASE_URL = "sqlite:///crm_data.db"  # For development - use PostgreSQL for production
+   
+   # Communication Services (Optional)
+   TWILIO_ACCOUNT_SID = "your-twilio-account-sid"
+   TWILIO_AUTH_TOKEN = "your-twilio-auth-token"
+   TWILIO_PHONE_NUMBER = "your-twilio-phone-number"
+   
+   SENDGRID_API_KEY = "your-sendgrid-api-key"
+   FROM_EMAIL = "sales@yourdomain.com"
+   FROM_NAME = "Sales Team"
    ```
 
 4. **Deploy**
@@ -125,6 +137,34 @@ Update your README.md with the actual live URL:
 2. **Generate API Key** in API Keys section
 3. **Set Usage Limits** to control costs
 4. **Monitor Usage** in dashboard
+
+### **CRM Database Setup**
+
+**For Development (SQLite)**
+- No additional setup required
+- Database file created automatically
+- Data persists locally
+
+**For Production (PostgreSQL)**
+1. **Create Database** on provider (e.g., Railway, Supabase, AWS RDS)
+2. **Update DATABASE_URL**:
+   ```
+   DATABASE_URL = "postgresql://user:password@host:port/database"
+   ```
+
+### **Communication Services (Optional)**
+
+**Twilio (Voice & SMS)**
+1. **Create Account** at [Twilio](https://www.twilio.com/)
+2. **Get Account SID** and **Auth Token**
+3. **Purchase Phone Number**
+4. **Configure Webhooks** for incoming calls/SMS
+
+**SendGrid (Email)**
+1. **Create Account** at [SendGrid](https://sendgrid.com/)
+2. **Generate API Key** with Send Mail permissions
+3. **Verify Sender Identity** (email address)
+4. **Set up Domain Authentication** (recommended)
 
 ---
 
