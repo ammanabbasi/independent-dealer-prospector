@@ -11,7 +11,7 @@ from datetime import datetime
 import time
 import logging
 
-from services.crm_service import crm_service
+# Import services dynamically to avoid circular imports
 
 logger = logging.getLogger(__name__)
 
@@ -125,67 +125,9 @@ def handle_map_click(click_event: Dict, gmaps_client, search_function) -> Option
             'duplicate_prospects': 0
         }
         
-        # Save search to CRM
-        try:
-            search_record = crm_service.save_search(search_data)
-            
-            # Process and save dealers to CRM
-            new_prospects_count = 0
-            duplicate_prospects_count = 0
-            
-            for dealer in new_dealers:
-                # Check if dealer already exists
-                existing_prospect = crm_service.get_prospect_by_place_id(dealer.get('place_id'))
-                
-                if existing_prospect:
-                    duplicate_prospects_count += 1
-                    # Link to search results
-                    crm_service.link_search_prospect(
-                        search_record.id,
-                        existing_prospect.id,
-                        dealer.get('distance', 0),
-                        dealer.get('prospect_score', 0),
-                        is_new=False
-                    )
-                else:
-                    # Create new prospect
-                    new_prospects_count += 1
-                    prospect_data = {
-                        'place_id': dealer.get('place_id'),
-                        'name': dealer.get('name'),
-                        'address': dealer.get('address'),
-                        'phone': dealer.get('phone'),
-                        'website': dealer.get('website'),
-                        'rating': dealer.get('rating'),
-                        'total_reviews': dealer.get('user_ratings_total', 0),
-                        'latitude': dealer.get('location', {}).get('lat'),
-                        'longitude': dealer.get('location', {}).get('lng'),
-                        'source_zip': zip_code,
-                        'distance_miles': dealer.get('distance', 0),
-                        'ai_score': dealer.get('prospect_score', 0),
-                        'priority': 'high' if dealer.get('priority') == 'High' else 'standard',
-                        'status': 'prospect'
-                    }
-                    
-                    saved_prospect = crm_service.save_prospect(prospect_data)
-                    
-                    # Link to search results
-                    crm_service.link_search_prospect(
-                        search_record.id,
-                        saved_prospect.id,
-                        dealer.get('distance', 0),
-                        dealer.get('prospect_score', 0),
-                        is_new=True
-                    )
-            
-            # Update search record with final counts - fix SQL error
-            search_record.new_prospects = new_prospects_count
-            search_record.duplicate_prospects = duplicate_prospects_count
-            crm_service._get_session().commit()
-            
-        except Exception as e:
-            logger.error(f"Error saving map click search to CRM: {e}")
-            st.warning("⚠️ Search completed but there was an issue saving to CRM.")
+        # Store results in session state for potential manual saving
+        st.session_state.map_search_results = new_dealers
+        st.session_state.map_search_zip_code = zip_code
         
         # Add to recent searches
         recent_searches.append((current_time, zip_code))
@@ -241,11 +183,11 @@ def create_interactive_dealer_map(dealers: List[Dict], center_location: Dict, gm
     """
     # Determine appropriate zoom level based on data
     if dealers:
-        # If we have dealers, zoom closer to show the area
-        zoom_start = 11
+        # If we have dealers, zoom to show local area
+        zoom_start = 10
     else:
-        # If no dealers, zoom out to show larger area for exploration
-        zoom_start = 6
+        # If no dealers, show state/regional level for exploration
+        zoom_start = 8
     
     # Create map with enhanced styling
     m = folium.Map(
@@ -366,7 +308,7 @@ def create_interactive_dealer_map(dealers: List[Dict], center_location: Dict, gm
     
     return m
 
-def display_interactive_map(dealers: List[Dict], center_location: Dict, gmaps_client, search_function):
+def display_interactive_map(dealers: List[Dict], center_location: Dict, gmaps_client, search_function, unique_key: str = None):
     """
     Display an interactive folium map with click-to-search functionality.
     Enhanced with larger size and better visual appeal.
@@ -375,16 +317,26 @@ def display_interactive_map(dealers: List[Dict], center_location: Dict, gmaps_cl
         # Create the interactive map with enhanced styling
         interactive_map = create_interactive_dealer_map(dealers, center_location, gmaps_client, search_function)
         
-        # Display the map with enhanced size and styling - MUCH LARGER
+        # Generate unique key if not provided using session state counter
+        if unique_key is None:
+            # Initialize map counter in session state if not exists
+            if 'map_widget_counter' not in st.session_state:
+                st.session_state.map_widget_counter = 0
+            
+            # Increment counter and create unique key
+            st.session_state.map_widget_counter += 1
+            unique_key = f"interactive_dealer_map_{st.session_state.map_widget_counter}_{int(center_location.get('lat', 0) * 1000)}_{int(center_location.get('lng', 0) * 1000)}"
+        
+        # Display the map with professional sizing
         map_data = st_folium(
             interactive_map, 
             center=center_location,
-            zoom=10,
+            zoom=8,  # Reduced zoom for better overview
             width="100%",
-            height=1000,  # Increased to 1000px to fill the entire space
+            height=500,  # Reduced to reasonable size
             returned_objects=["last_clicked"],
             feature_group_to_add=None,
-            key="interactive_dealer_map"
+            key=unique_key
         )
         
         # Handle map clicks for search

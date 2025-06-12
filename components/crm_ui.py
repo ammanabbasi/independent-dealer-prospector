@@ -13,8 +13,7 @@ from typing import List
 import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
-from services.crm_service import crm_service
-from services.communication_service import communication_service
+# Import services dynamically to avoid circular imports
 
 def _get_prospect_value(prospect, key, default=None):
     """Helper function to safely get values from prospect (dict or SQLAlchemy object)"""
@@ -26,7 +25,7 @@ def _get_prospect_value(prospect, key, default=None):
     else:
         return default
 
-def render_communication_panel(prospect_id: int, prospect_data):
+def render_communication_panel(prospect_id: int, prospect_data, crm_service=None, communication_service=None):
     """Render communication panel for a prospect"""
     
     st.markdown("### 📞 Communications")
@@ -49,26 +48,29 @@ def render_communication_panel(prospect_id: int, prospect_data):
     with col1:
         if st.button("📞 Call", key=f"call_{prospect_id}_{place_id}_{panel_counter}", use_container_width=True):
             if phone:
-                show_call_modal(prospect_id, phone, name)
+                show_call_modal(prospect_id, phone, name, crm_service, communication_service)
             else:
                 st.error("No phone number available")
     
     with col2:
         if st.button("📧 Email", key=f"email_{prospect_id}_{place_id}_{panel_counter}", use_container_width=True):
             if email:
-                show_email_modal(prospect_id, email, name)
+                show_email_modal(prospect_id, email, name, crm_service, communication_service)
             else:
                 st.error("No email address available")
     
     with col3:
         if st.button("💬 SMS", key=f"sms_{prospect_id}_{place_id}_{panel_counter}", use_container_width=True):
             if phone:
-                show_sms_modal(prospect_id, phone, name)
+                show_sms_modal(prospect_id, phone, name, crm_service, communication_service)
             else:
                 st.error("No phone number available")
     
     # Communication history
-    communications = communication_service.get_prospect_communications(prospect_id)
+    if communication_service:
+        communications = communication_service.get_prospect_communications(prospect_id)
+    else:
+        communications = []
     
     if communications:
         st.markdown("#### Recent Communications")
@@ -82,7 +84,7 @@ def render_communication_panel(prospect_id: int, prospect_data):
                 if comm['response']:
                     st.write(f"**Response:** {comm['response']}")
 
-def show_call_modal(prospect_id: int, phone: str, name: str):
+def show_call_modal(prospect_id: int, phone: str, name: str, crm_service=None, communication_service=None):
     """Show call initiation modal"""
     # Generate unique keys for this modal
     if 'widget_counter' not in st.session_state:
@@ -105,7 +107,10 @@ def show_call_modal(prospect_id: int, phone: str, name: str):
         col1, col2 = st.columns(2)
         with col1:
             if st.button("📞 Initiate Call", use_container_width=True, key=f"initiate_call_{prospect_id}_{modal_counter}"):
-                result = communication_service.make_call(prospect_id, phone, message)
+                if communication_service:
+                    result = communication_service.make_call(prospect_id, phone, message)
+                else:
+                    result = {'success': False, 'error': 'Communication service not available'}
                 if result['success']:
                     st.success(f"Call initiated! SID: {result['call_sid']}")
                 else:
@@ -120,10 +125,13 @@ def show_call_modal(prospect_id: int, phone: str, name: str):
                     'status': 'manual_log',
                     'message': message or f"Manual call log for {name}"
                 }
-                crm_service.log_communication(prospect_id, comm_data)
-                st.success("Call logged manually")
+                if crm_service:
+                    crm_service.log_communication(prospect_id, comm_data)
+                    st.success("Call logged manually")
+                else:
+                    st.error('CRM service not available')
 
-def show_email_modal(prospect_id: int, email: str, name: str):
+def show_email_modal(prospect_id: int, email: str, name: str, crm_service=None, communication_service=None):
     """Show email composition modal"""
     # Generate unique keys for this modal
     if 'widget_counter' not in st.session_state:
@@ -136,7 +144,7 @@ def show_email_modal(prospect_id: int, email: str, name: str):
         st.write(f"**To:** {email}")
         
         # Email templates
-        templates = communication_service.get_email_templates()
+        templates = communication_service.get_email_templates() if communication_service else [] if communication_service else []
         template_names = [t['name'] for t in templates]
         
         selected_template = st.selectbox(
@@ -160,9 +168,13 @@ def show_email_modal(prospect_id: int, email: str, name: str):
         with col1:
             if st.button("📧 Send Email", use_container_width=True, key=f"send_email_{prospect_id}_{modal_counter}"):
                 if subject and content:
-                    result = communication_service.send_email(
-                        prospect_id, email, subject, content
-                    )
+                    if communication_service:
+                        if communication_service:
+                result = communication_service.send_email(
+                            prospect_id, email, subject, content
+                        )
+                    else:
+                        result = {'success': False, 'error': 'Communication service not available'}
                     if result['success']:
                         st.success("Email sent successfully!")
                     else:
@@ -175,7 +187,7 @@ def show_email_modal(prospect_id: int, email: str, name: str):
                 # Save as draft (could implement later)
                 st.info("Draft functionality coming soon")
 
-def show_sms_modal(prospect_id: int, phone: str, name: str):
+def show_sms_modal(prospect_id: int, phone: str, name: str, crm_service=None, communication_service=None):
     """Show SMS composition modal"""
     # Generate unique keys for this modal
     if 'widget_counter' not in st.session_state:
@@ -188,7 +200,7 @@ def show_sms_modal(prospect_id: int, phone: str, name: str):
         st.write(f"**To:** {phone}")
         
         # SMS templates
-        templates = communication_service.get_sms_templates()
+        templates = communication_service.get_sms_templates() if communication_service else [] if communication_service else []
         template_names = [t['name'] for t in templates]
         
         selected_template = st.selectbox(
@@ -218,7 +230,10 @@ def show_sms_modal(prospect_id: int, phone: str, name: str):
         with col1:
             if st.button("💬 Send SMS", use_container_width=True, key=f"send_sms_{prospect_id}_{modal_counter}"):
                 if message:
-                    result = communication_service.send_sms(prospect_id, phone, message)
+                    if communication_service:
+                        result = communication_service.send_sms(prospect_id, phone, message)
+                    else:
+                        result = {'success': False, 'error': 'Communication service not available'}
                     if result['success']:
                         st.success("SMS sent successfully!")
                     else:
@@ -234,10 +249,13 @@ def show_sms_modal(prospect_id: int, phone: str, name: str):
                     'status': 'manual_log',
                     'message': message
                 }
-                crm_service.log_communication(prospect_id, comm_data)
-                st.success("SMS logged manually")
+                if crm_service:
+                    crm_service.log_communication(prospect_id, comm_data)
+                    st.success("SMS logged manually")
+                else:
+                    st.error('CRM service not available')
 
-def render_enhanced_prospect_card(prospect, show_communications=True):
+def render_enhanced_prospect_card(prospect, show_communications=True, crm_service=None, communication_service=None, show_checkbox=False):
     """Render enhanced prospect card with CRM features"""
     
     # Get database prospect if we have an ID
@@ -247,7 +265,7 @@ def render_enhanced_prospect_card(prospect, show_communications=True):
     else:
         place_id = _get_prospect_value(prospect, 'place_id')
         if place_id:
-            db_prospect = crm_service.get_prospect_by_place_id(place_id)
+            db_prospect = crm_service.get_prospect_by_place_id(place_id) if crm_service else None
     
     # Status colors
     status_colors = {
@@ -278,50 +296,133 @@ def render_enhanced_prospect_card(prospect, show_communications=True):
         """, unsafe_allow_html=True)
         
         # Header with status and visited indicators
-        col1, col2, col3 = st.columns([3, 1, 1])
+        if show_checkbox:
+            col1, col2, col3, col4 = st.columns([0.5, 2.5, 1, 1])
+        else:
+            col1, col2, col3 = st.columns([3, 1, 1])
         
-        with col1:
-            name = _get_prospect_value(prospect, 'name', 'Unknown Dealership')
-            st.markdown(f"### {name}")
+        # Checkbox column (only when show_checkbox=True)
+        if show_checkbox:
+            with col1:
+                place_id = _get_prospect_value(prospect, 'place_id')
+                if place_id:
+                    if 'selected_dealers' not in st.session_state:
+                        st.session_state.selected_dealers = []
+                    
+                    # Create unique checkbox key
+                    if 'widget_counter' not in st.session_state:
+                        st.session_state.widget_counter = 0
+                    st.session_state.widget_counter += 1
+                    checkbox_key = f"select_{place_id}_{st.session_state.widget_counter}"
+                    
+                    is_selected = place_id in st.session_state.selected_dealers
+                    new_selected = st.checkbox(
+                        "Select",
+                        value=is_selected,
+                        key=checkbox_key,
+                        label_visibility="collapsed"
+                    )
+                    
+                    if new_selected != is_selected:
+                        if new_selected:
+                            if place_id not in st.session_state.selected_dealers:
+                                st.session_state.selected_dealers.append(place_id)
+                        else:
+                            if place_id in st.session_state.selected_dealers:
+                                st.session_state.selected_dealers.remove(place_id)
+                        st.rerun()
             
-            # Website link if available
-            website = _get_prospect_value(prospect, 'website')
-            if website:
-                if not website.startswith('http'):
-                    website = f"https://{website}"
-                st.markdown(f"🌐 [Visit Website]({website}) ↗️")
-        
-        with col2:
-            # Status badge
-            st.markdown(f"""
-            <div style="
-                background: {card_color};
-                color: white;
-                padding: 0.5rem;
-                border-radius: 8px;
-                text-align: center;
-                font-weight: bold;
-            ">
-                {status.upper()}
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            # Visited toggle
-            if db_prospect:
-                # Create more robust unique key using a counter to avoid duplicates
-                if 'widget_counter' not in st.session_state:
-                    st.session_state.widget_counter = 0
-                st.session_state.widget_counter += 1
-                unique_key = f"visited_{db_prospect.id}_{db_prospect.place_id or 'no_place_id'}_{st.session_state.widget_counter}"
-                new_visited = st.checkbox(
-                    "Visited", 
-                    value=visited,
-                    key=unique_key
-                )
-                if new_visited != visited:
-                    crm_service.mark_prospect_visited(db_prospect.id, new_visited)
-                    st.rerun()
+            # Name and website column (adjusted for checkbox)
+            with col2:
+                name = _get_prospect_value(prospect, 'name', 'Unknown Dealership')
+                st.markdown(f"### {name}")
+                
+                # Website link if available
+                website = _get_prospect_value(prospect, 'website')
+                if website:
+                    if not website.startswith('http'):
+                        website = f"https://{website}"
+                    st.markdown(f"🌐 [Visit Website]({website}) ↗️")
+            
+            # Status column
+            with col3:
+                # Status badge
+                st.markdown(f"""
+                <div style="
+                    background: {card_color};
+                    color: white;
+                    padding: 0.5rem;
+                    border-radius: 8px;
+                    text-align: center;
+                    font-weight: bold;
+                ">
+                    {status.upper()}
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Visited column
+            with col4:
+                # Visited toggle
+                if db_prospect:
+                    # Create more robust unique key using a counter to avoid duplicates
+                    if 'widget_counter' not in st.session_state:
+                        st.session_state.widget_counter = 0
+                    st.session_state.widget_counter += 1
+                    unique_key = f"visited_{db_prospect.id}_{db_prospect.place_id or 'no_place_id'}_{st.session_state.widget_counter}"
+                    new_visited = st.checkbox(
+                        "Visited", 
+                        value=visited,
+                        key=unique_key
+                    )
+                    if new_visited != visited:
+                        if crm_service:
+                            crm_service.mark_prospect_visited(db_prospect.id, new_visited)
+                        st.rerun()
+        else:
+            # Original layout without checkbox
+            with col1:
+                name = _get_prospect_value(prospect, 'name', 'Unknown Dealership')
+                st.markdown(f"### {name}")
+                
+                # Website link if available
+                website = _get_prospect_value(prospect, 'website')
+                if website:
+                    if not website.startswith('http'):
+                        website = f"https://{website}"
+                    st.markdown(f"🌐 [Visit Website]({website}) ↗️")
+            
+            with col2:
+                # Status badge
+                st.markdown(f"""
+                <div style="
+                    background: {card_color};
+                    color: white;
+                    padding: 0.5rem;
+                    border-radius: 8px;
+                    text-align: center;
+                    font-weight: bold;
+                ">
+                    {status.upper()}
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col3:
+                # Visited toggle
+                if db_prospect:
+                    # Create more robust unique key using a counter to avoid duplicates
+                    if 'widget_counter' not in st.session_state:
+                        st.session_state.widget_counter = 0
+                    st.session_state.widget_counter += 1
+                    unique_key = f"visited_{db_prospect.id}_{db_prospect.place_id or 'no_place_id'}_{st.session_state.widget_counter}"
+                    new_visited = st.checkbox(
+                        "Visited", 
+                        value=visited,
+                        key=unique_key
+                    )
+                    if new_visited != visited:
+                        if crm_service:
+                            crm_service.mark_prospect_visited(db_prospect.id, new_visited)
+                        st.rerun()
         
         # Prospect details
         col1, col2 = st.columns(2)
@@ -360,13 +461,14 @@ def render_enhanced_prospect_card(prospect, show_communications=True):
             )
             
             if st.button("💾 Save Notes", key=f"save_notes_{save_notes_key}"):
-                crm_service.update_prospect_notes(db_prospect.id, notes)
+                if crm_service:
+                    crm_service.update_prospect_notes(db_prospect.id, notes)
                 st.success("Notes saved!")
         
         # Communications panel
         if show_communications and db_prospect:
             with st.expander("📞 Communications", expanded=False):
-                render_communication_panel(db_prospect.id, prospect)
+                render_communication_panel(db_prospect.id, prospect, crm_service, communication_service)
         
         # Status update buttons
         if db_prospect:
@@ -388,22 +490,26 @@ def render_enhanced_prospect_card(prospect, show_communications=True):
             
             with status_col1:
                 if st.button("✅ Mark Contacted", key=f"contacted_{contacted_key}"):
-                    crm_service.update_prospect_status(db_prospect.id, 'contacted')
+                    if crm_service:
+                        crm_service.update_prospect_status(db_prospect.id, 'contacted')
                     st.rerun()
             
             with status_col2:
                 if st.button("🎯 Mark Qualified", key=f"qualified_{qualified_key}"):
-                    crm_service.update_prospect_status(db_prospect.id, 'qualified')
+                    if crm_service:
+                        crm_service.update_prospect_status(db_prospect.id, 'qualified')
                     st.rerun()
             
             with status_col3:
                 if st.button("🚫 Do Not Call", key=f"dnc_{dnc_key}"):
-                    crm_service.update_prospect_status(db_prospect.id, 'dnc')
+                    if crm_service:
+                        crm_service.update_prospect_status(db_prospect.id, 'dnc')
                     st.rerun()
             
             with status_col4:
                 if st.button("🔄 Reset Status", key=f"reset_{reset_key}"):
-                    crm_service.update_prospect_status(db_prospect.id, 'prospect')
+                    if crm_service:
+                        crm_service.update_prospect_status(db_prospect.id, 'prospect')
                     st.rerun()
             
             with status_col5:
@@ -420,7 +526,7 @@ def render_enhanced_prospect_card(prospect, show_communications=True):
                         st.session_state[f"confirm_delete_{db_prospect.id}"] = True
                         st.warning("⚠️ Click delete again to confirm permanent removal.")
                     else:
-                        if crm_service.delete_prospect(db_prospect.id):
+                        if crm_service and crm_service.delete_prospect(db_prospect.id):
                             st.success("✅ Prospect deleted successfully!")
                             # Clear confirmation state
                             del st.session_state[f"confirm_delete_{db_prospect.id}"]
@@ -451,7 +557,7 @@ def render_prospects_table(prospects: List, show_actions=True):
         else:
             place_id = _get_prospect_value(prospect, 'place_id')
             if place_id:
-                db_prospect = crm_service.get_prospect_by_place_id(place_id)
+                db_prospect = crm_service.get_prospect_by_place_id(place_id) if crm_service else None
         
         row = {
             'ID': db_prospect.id if db_prospect else 0,
@@ -523,7 +629,7 @@ def render_prospects_table(prospects: List, show_actions=True):
                     st.session_state.confirm_bulk_delete = True
                     st.warning(f"⚠️ Click again to confirm deletion of {len(selected_ids)} prospects.")
                 else:
-                    deleted_count = crm_service.bulk_delete_prospects(selected_ids)
+                    deleted_count = crm_service.bulk_delete_prospects(selected_ids) if crm_service else 0
                     if deleted_count > 0:
                         st.success(f"✅ Successfully deleted {deleted_count} prospects!")
                         del st.session_state.confirm_bulk_delete
@@ -547,13 +653,17 @@ def render_prospects_table(prospects: List, show_actions=True):
             st.markdown("---")
             st.markdown("### Selected Prospect Details")
             
-            db_prospect = crm_service.get_prospect_by_id(prospect_id)
+            db_prospect = crm_service.get_prospect_by_id(prospect_id) if crm_service else None
             if db_prospect:
                 render_enhanced_prospect_card(db_prospect, show_communications=True)
 
-def render_search_history_tab():
+def render_search_history_tab(crm_service=None):
     """Render the search history tab"""
     st.markdown("## 📊 Search History")
+    
+    if not crm_service:
+        st.error("CRM service not available")
+        return
     
     # Get search history
     searches = crm_service.get_search_history(limit=50)
@@ -611,7 +721,7 @@ def render_search_history_tab():
         st.markdown("---")
         st.markdown("### Search Details")
         
-        search = crm_service.get_search_by_id(search_id)
+        search = crm_service.get_search_by_id(search_id) if crm_service else None
         if search:
             col1, col2, col3 = st.columns([2, 2, 1])
             
@@ -643,7 +753,7 @@ def render_search_history_tab():
                         st.session_state[f"confirm_delete_search_{search_id}"] = True
                         st.warning("⚠️ Click again to confirm deletion.")
                     else:
-                        if crm_service.delete_search(search_id):
+                        if crm_service and crm_service.delete_search(search_id):
                             st.success("✅ Search deleted from history!")
                             del st.session_state[f"confirm_delete_search_{search_id}"]
                             st.rerun()
@@ -660,9 +770,13 @@ def render_search_history_tab():
                 }
                 st.success("Search parameters loaded! Go to the Search tab to execute.")
 
-def render_analytics_dashboard():
+def render_analytics_dashboard(crm_service=None):
     """Render the analytics dashboard"""
     st.markdown("## 📈 CRM Analytics")
+    
+    if not crm_service:
+        st.error("CRM service not available")
+        return
     
     # Get statistics
     prospect_stats = crm_service.get_prospect_stats()
@@ -745,7 +859,7 @@ def render_contact_info_editor(prospect):
     else:
         place_id = _get_prospect_value(prospect, 'place_id')
         if place_id:
-            db_prospect = crm_service.get_prospect_by_place_id(place_id)
+            db_prospect = crm_service.get_prospect_by_place_id(place_id) if crm_service else None
     
     if not db_prospect:
         st.error("Cannot edit contact info - prospect not found in database")
@@ -889,7 +1003,7 @@ def render_contact_info_editor(prospect):
                 'sales_notes': sales_notes.strip() if sales_notes else None
             }
             
-            success = crm_service.update_prospect_contact_info(db_prospect.id, update_data)
+            success = crm_service.update_prospect_contact_info(db_prospect.id, update_data) if crm_service else False
             
             if success:
                 st.success("✅ Contact information updated successfully!")
@@ -897,10 +1011,14 @@ def render_contact_info_editor(prospect):
             else:
                 st.error("❌ Failed to update contact information")
 
-def render_batch_messaging():
+def render_batch_messaging(crm_service=None, communication_service=None):
     """Render batch messaging interface with templates"""
     
     st.markdown("## 📨 Batch Messaging")
+    
+    if not crm_service:
+        st.error("CRM service not available")
+        return
     
     # Get all prospects for selection
     all_prospects = crm_service.get_all_prospects()
@@ -984,7 +1102,7 @@ def render_batch_email_interface(prospects):
     st.markdown("#### 📧 Batch Email Campaign")
     
     # Template selection
-    templates = communication_service.get_email_templates()
+    templates = communication_service.get_email_templates() if communication_service else []
     template_names = [t['name'] for t in templates]
     
     template_col1, template_col2 = st.columns([2, 1])
@@ -1119,7 +1237,8 @@ Best regards,
             test_subject = render_template_content(subject, test_variables)
             test_content = render_template_content(content, test_variables)
             
-            result = communication_service.send_email(
+            if communication_service:
+                result = communication_service.send_email(
                 0,  # Test prospect ID
                 test_email,
                 f"[TEST] {test_subject}",
@@ -1168,7 +1287,8 @@ Best regards,
             final_subject = render_template_content(subject, variables)
             final_content = render_template_content(content, variables)
             
-            result = communication_service.send_email(
+            if communication_service:
+                result = communication_service.send_email(
                 prospect.id,
                 prospect.contact_email,
                 final_subject,
@@ -1194,7 +1314,7 @@ def render_batch_sms_interface(prospects):
     st.markdown("#### 💬 Batch SMS Campaign")
     
     # Template selection
-    templates = communication_service.get_sms_templates()
+    templates = communication_service.get_sms_templates() if communication_service else []
     template_names = [t['name'] for t in templates]
     
     selected_template = st.selectbox(
@@ -1396,9 +1516,9 @@ def render_template_manager(channel_type):
     
     # Get existing templates
     if channel_type == 'email':
-        templates = communication_service.get_email_templates()
+        templates = communication_service.get_email_templates() if communication_service else []
     else:
-        templates = communication_service.get_sms_templates()
+        templates = communication_service.get_sms_templates() if communication_service else []
     
     # Create new template
     with st.expander("➕ Create New Template", expanded=False):
