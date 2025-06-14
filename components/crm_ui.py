@@ -169,8 +169,7 @@ def show_email_modal(prospect_id: int, email: str, name: str, crm_service=None, 
             if st.button("📧 Send Email", use_container_width=True, key=f"send_email_{prospect_id}_{modal_counter}"):
                 if subject and content:
                     if communication_service:
-                        if communication_service:
-                result = communication_service.send_email(
+                        result = communication_service.send_email(
                             prospect_id, email, subject, content
                         )
                     else:
@@ -200,7 +199,7 @@ def show_sms_modal(prospect_id: int, phone: str, name: str, crm_service=None, co
         st.write(f"**To:** {phone}")
         
         # SMS templates
-        templates = communication_service.get_sms_templates() if communication_service else [] if communication_service else []
+        templates = communication_service.get_sms_templates() if communication_service else []
         template_names = [t['name'] for t in templates]
         
         selected_template = st.selectbox(
@@ -1088,15 +1087,15 @@ def render_batch_messaging(crm_service=None, communication_service=None):
     channel_tab1, channel_tab2, channel_tab3 = st.tabs(["📧 Email", "💬 SMS", "📞 Call"])
     
     with channel_tab1:
-        render_batch_email_interface(filtered_prospects)
+        render_batch_email_interface(filtered_prospects, communication_service)
     
     with channel_tab2:
-        render_batch_sms_interface(filtered_prospects)
+        render_batch_sms_interface(filtered_prospects, communication_service)
     
     with channel_tab3:
-        render_batch_call_interface(filtered_prospects)
+        render_batch_call_interface(filtered_prospects, communication_service, crm_service)
 
-def render_batch_email_interface(prospects):
+def render_batch_email_interface(prospects, communication_service=None):
     """Render batch email interface"""
     
     st.markdown("#### 📧 Batch Email Campaign")
@@ -1308,7 +1307,7 @@ Best regards,
         # Final results
         st.success(f"Campaign completed! ✅ {success_count} sent, ❌ {failure_count} failed")
 
-def render_batch_sms_interface(prospects):
+def render_batch_sms_interface(prospects, communication_service=None):
     """Render batch SMS interface"""
     
     st.markdown("#### 💬 Batch SMS Campaign")
@@ -1411,7 +1410,7 @@ def render_batch_sms_interface(prospects):
         
         st.success(f"Campaign completed! ✅ {success_count} sent, ❌ {failure_count} failed")
 
-def render_batch_call_interface(prospects):
+def render_batch_call_interface(prospects, communication_service=None, crm_service=None):
     """Render batch call interface"""
     
     st.markdown("#### 📞 Batch Call Campaign")

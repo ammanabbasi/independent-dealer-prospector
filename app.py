@@ -26,38 +26,35 @@ try:
     from components.crm_ui import (
         render_enhanced_prospect_card, 
         render_search_history_tab, 
-        render_analytics_dashboard,
-        render_batch_messaging,
+        render_analytics_dashboard, 
+        render_batch_messaging, 
         render_prospects_table
     )
-    from components.maps import (
-        display_interactive_map,
-        display_map_statistics
-    )
+    from components.maps import display_interactive_map, display_map_statistics
     CRM_IMPORTS_AVAILABLE = True
 except ImportError as e:
     st.error(f"Failed to import CRM components: {e}")
     CRM_IMPORTS_AVAILABLE = False
-    
+
     # Define fallback functions to prevent NoneType errors
     def render_enhanced_prospect_card(*args, **kwargs):
         st.error("CRM UI components not available")
-    
+
     def render_search_history_tab(*args, **kwargs):
         st.error("CRM UI components not available")
-    
+
     def render_analytics_dashboard(*args, **kwargs):
         st.error("CRM UI components not available")
-    
+
     def render_batch_messaging(*args, **kwargs):
         st.error("CRM UI components not available")
-    
+
     def render_prospects_table(*args, **kwargs):
         st.error("CRM UI components not available")
-    
+
     def display_interactive_map(*args, **kwargs):
         st.error("Map components not available")
-    
+
     def display_map_statistics(*args, **kwargs):
         st.error("Map components not available")
 
@@ -562,77 +559,17 @@ def search_independent_dealers(zip_code: str, radius_miles: int = None) -> List[
         
         all_dealers = {}
         
-        # Comprehensive search queries to find ALL dealers
+        # Streamlined search queries (reduced from 47 to 8 most effective)
         search_queries = [
-            # Primary used car terms
+            # Most effective primary searches
             f"used car dealer {zip_code}",
             f"used cars {zip_code}",
-            f"pre-owned cars {zip_code}",
-            f"pre owned vehicles {zip_code}",
-            f"previously owned cars {zip_code}",
-            f"certified pre-owned {zip_code}",
-            
-            # Auto sales terms
             f"auto sales {zip_code}",
-            f"car sales {zip_code}",
-            f"vehicle sales {zip_code}",
-            f"automobile sales {zip_code}",
-            
-            # General dealer terms
             f"car dealer {zip_code}",
-            f"auto dealer {zip_code}",
-            f"automobile dealer {zip_code}",
-            f"vehicle dealer {zip_code}",
-            
-            # Lot and mart terms
             f"car lot {zip_code}",
-            f"auto lot {zip_code}",
-            f"car mart {zip_code}",
-            f"auto mart {zip_code}",
-            f"car world {zip_code}",
-            f"auto world {zip_code}",
-            
-            # Connection and plaza terms
-            f"car connection {zip_code}",
-            f"auto connection {zip_code}",
-            f"car plaza {zip_code}",
-            f"auto plaza {zip_code}",
-            f"car center {zip_code}",
-            f"auto center {zip_code}",
-            
-            # Gallery and depot terms
-            f"car gallery {zip_code}",
-            f"auto gallery {zip_code}",
-            f"car depot {zip_code}",
-            f"auto depot {zip_code}",
-            f"car emporium {zip_code}",
-            f"auto emporium {zip_code}",
-            
-            # Quality and budget terms
-            f"quality used cars {zip_code}",
-            f"affordable cars {zip_code}",
-            f"discount auto {zip_code}",
-            f"budget cars {zip_code}",
-            f"economy auto {zip_code}",
-            
-            # Independent dealer terms
             f"independent auto {zip_code}",
-            f"family owned cars {zip_code}",
-            f"locally owned auto {zip_code}",
-            f"wholesale cars {zip_code}",
-            
-            # Additional patterns
-            f"select auto {zip_code}",
-            f"premier auto {zip_code}",
-            f"elite auto {zip_code}",
-            f"choice auto {zip_code}",
-            f"best buy auto {zip_code}",
-            
-            # Short form searches (sometimes more effective)
-            f"used cars in {zip_code}",
             f"car dealers in {zip_code}",
-            f"auto dealers near {zip_code}",
-            f"car lots near {zip_code}"
+            f"auto dealers near {zip_code}"
         ]
         
         # Also search by type in the area
@@ -665,14 +602,10 @@ def search_independent_dealers(zip_code: str, radius_miles: int = None) -> List[
                 st.warning(f"Error in text search: {str(e)}")
                 continue
         
-        # 2. Multiple radius-based searches around ZIP code
+        # 2. Streamlined radius-based searches (reduced from 6 to 2)
         radius_searches = [
-            (8000, 'car_dealer'),       # ~5 miles - car dealers
-            (16000, 'car_dealer'),      # ~10 miles - car dealers  
-            (24000, 'car_dealer'),      # ~15 miles - car dealers
-            (8000, 'car_rental'),       # Check car rental (might catch some dealers)
-            (16000, 'car_repair'),      # Check car repair (some also sell)
-            (16000, 'establishment'),   # Generic establishments
+            (12000, 'car_dealer'),      # ~7.5 miles - car dealers (sweet spot)
+            (20000, 'car_dealer'),      # ~12.5 miles - extended range
         ]
         
         for radius, search_type in radius_searches:
@@ -720,13 +653,10 @@ def search_independent_dealers(zip_code: str, radius_miles: int = None) -> List[
                     state = component['short_name']
             
             if city and state:
-                # Additional city-based searches
+                # Streamlined city-based searches (reduced from 5 to 2)
                 city_searches = [
                     f"used cars {city} {state}",
-                    f"car dealers {city} {state}",
-                    f"auto sales {city} {state}",
-                    f"independent auto {city} {state}",
-                    f"car lots {city} {state}"
+                    f"car dealers {city} {state}"
                 ]
                 
                 for query in city_searches:
@@ -1592,9 +1522,6 @@ def search_and_prospect_tab():
             display_interactive_map(map_prospects, default_center, gmaps_client, lambda zip_code: search_independent_dealers(zip_code), unique_key="search_tab_map")
         
         st.markdown("</div>", unsafe_allow_html=True)  # Close map container
-        
-        # Add spacing
-        st.markdown("---")
     
     # ZIP Code input section (conditional)
     if search_method in ["📍 Enter ZIP Codes", "🔄 Both Methods"]:
@@ -1605,7 +1532,7 @@ def search_and_prospect_tab():
                 padding: 2rem;
                 border-radius: 12px;
                 border: 1px solid #e9ecef;
-                margin: 1.5rem 0;
+                margin: 0.5rem 0;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.05);
             ">
                 <h3 style="margin: 0 0 1rem 0; color: #2c3e50; font-weight: 600;">
@@ -1667,7 +1594,8 @@ def search_and_prospect_tab():
         with col2:
             st.button("🗑️ Clear Cache", help="Refresh search data", use_container_width=True)
         
-        st.markdown("---")
+        # Reduced spacing
+        st.markdown("<br>", unsafe_allow_html=True)
         
         # Professional search button
         if st.button("🚀 Search Territories", type="primary", use_container_width=True, disabled=len(zip_codes) == 0):

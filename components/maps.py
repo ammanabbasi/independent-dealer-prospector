@@ -314,6 +314,20 @@ def display_interactive_map(dealers: List[Dict], center_location: Dict, gmaps_cl
     Enhanced with larger size and better visual appeal.
     """
     try:
+        # Add CSS to control map container size
+        st.markdown("""
+        <style>
+        .element-container:has(iframe[title*="streamlit_folium"]) {
+            width: 60% !important;
+            margin: 0 auto !important;
+        }
+        iframe[title*="streamlit_folium"] {
+            height: 600px !important;
+            width: 100% !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
         # Create the interactive map with enhanced styling
         interactive_map = create_interactive_dealer_map(dealers, center_location, gmaps_client, search_function)
         
@@ -332,8 +346,8 @@ def display_interactive_map(dealers: List[Dict], center_location: Dict, gmaps_cl
             interactive_map, 
             center=center_location,
             zoom=8,  # Reduced zoom for better overview
-            width="100%",
-            height=500,  # Reduced to reasonable size
+            width="75%",
+            height=600,  # Taller map for better visibility
             returned_objects=["last_clicked"],
             feature_group_to_add=None,
             key=unique_key

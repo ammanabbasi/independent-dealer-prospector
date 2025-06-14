@@ -3,8 +3,6 @@
 🚀 Independent Dealer Prospector - Deployment Helper
 """
 
-import os
-import sys
 import subprocess
 import webbrowser
 from pathlib import Path
